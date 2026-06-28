@@ -19,6 +19,14 @@ type PipelineResult = {
 
 const MAX_SOURCE_CHARS = 16000;
 
+const runIntentValidator = v.optional(
+  v.object({
+    objective: v.optional(v.string()),
+    participationOptions: v.optional(v.array(v.string())),
+    repCount: v.optional(v.number()),
+  }),
+);
+
 /**
  * Core Schrute pipeline. Uses OpenAI (gpt-4o-mini, structured outputs) for
  * extraction and the go/no-go memo when OPENAI_API_KEY is set on the Convex
@@ -29,6 +37,7 @@ export const runPipelineInternal = internalAction({
   args: {
     eventId: v.id("event"),
     sourceDocumentId: v.id("sourceDocument"),
+    runIntent: runIntentValidator,
   },
   returns: v.object({
     matchCount: v.number(),
@@ -57,7 +66,7 @@ export const runPipelineInternal = internalAction({
     );
 
     // 4. Decision memo — AI first, heuristic fallback.
-    let decisionMemoId = await runAiMemo(ctx, args.eventId);
+    let decisionMemoId = await runAiMemo(ctx, args.eventId, args.runIntent);
     if (!decisionMemoId) {
       decisionMemoId = await ctx.runMutation(internal.memo.generate, {
         eventId: args.eventId,
@@ -102,14 +111,19 @@ async function runAiExtraction(
 async function runAiMemo(
   ctx: ActionCtx,
   eventId: Id<"event">,
+  runIntent?: {
+    objective?: string;
+    participationOptions?: string[];
+    repCount?: number;
+  },
 ): Promise<Id<"decisionMemo"> | null> {
   try {
     const inputs = await ctx.runQuery(internal.memo.getInputs, { eventId });
     if (!inputs) return null;
 
     const ai = await callOpenAiJson<DecisionMemoOutput>({
-      system: `${AI_GUARDRAILS}\nYou are Schrute, a blunt GTM analyst. Write a go/no-go memo for whether a B2B team should spend on this event. Be concise and decisive. citationQuotes MUST be copied verbatim from the evidence quotes provided — never invent quotes. Align verdict with the underwriting recommendation unless the evidence clearly contradicts it.`,
-      user: buildMemoPrompt(inputs),
+      system: `${AI_GUARDRAILS}\nYou are Schrute, a blunt GTM analyst for construction and industrial field sales. Write a go/no-go memo for whether a B2B team should spend on this event. Be concise and decisive. Address how to show up: attend (send reps), sponsor, speak, or exhibit (booth) when the user's participation options are provided. citationQuotes MUST be copied verbatim from the evidence quotes provided — never invent quotes. Align verdict with the underwriting recommendation unless the evidence clearly contradicts it.`,
+      user: buildMemoPrompt(inputs, runIntent),
       responseSchema: decisionMemoSchema,
     });
 
@@ -158,7 +172,16 @@ type MemoInputs = {
   }>;
 };
 
-function buildMemoPrompt(inputs: MemoInputs): string {
+type RunIntentInput = {
+  objective?: string;
+  participationOptions?: string[];
+  repCount?: number;
+};
+
+function buildMemoPrompt(
+  inputs: MemoInputs,
+  runIntent?: RunIntentInput,
+): string {
   const { event, score, matches } = inputs;
   const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
@@ -177,11 +200,27 @@ function buildMemoPrompt(inputs: MemoInputs): string {
     })
     .join("\n");
 
+  const intentLines: string[] = [];
+  if (runIntent?.objective) {
+    intentLines.push(`User objective: ${runIntent.objective}`);
+  }
+  if (runIntent?.participationOptions?.length) {
+    intentLines.push(
+      `Participation options under review: ${runIntent.participationOptions.join(", ")}`,
+    );
+  }
+  if (runIntent?.repCount != null && runIntent.repCount > 0) {
+    intentLines.push(`Reps available to send: ${runIntent.repCount}`);
+  }
+
   return [
     `Event: ${event.name}${event.location ? ` (${event.location})` : ""}`,
     `Underwriting recommendation: ${score.recommendation}`,
-    `Economics: all-in cost ${usd(score.totalEventCost)}, needs ${score.requiredQualifiedMeetings} qualified meetings to break even, sponsor cap ${usd(score.sponsorCap)}.`,
+    `Economics: all-in cost ${usd(score.totalEventCost)}, needs ${score.requiredQualifiedMeetings} qualified meetings to break even, spend cap ${usd(score.sponsorCap)}.`,
     `Matched pipeline value: ${usd(score.matchedPipelineValue)}. Tier-1 CRM accounts present: ${score.tier1MatchCount}. Tier-2 net-new ICP: ${score.tier2MatchCount}.`,
+    ...(intentLines.length > 0
+      ? ["", "User context:", ...intentLines.map((l) => `- ${l}`)]
+      : []),
     "",
     "Matched accounts and their evidence quotes (use these for citationQuotes):",
     matchLines || "- (no matched accounts)",

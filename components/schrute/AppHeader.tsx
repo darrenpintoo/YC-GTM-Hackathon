@@ -54,7 +54,7 @@ function ModeToggle({
         )}
       >
         <FlaskConical className="size-3.5" />
-        Demo
+        Demo · curated
       </button>
       <button
         type="button"
@@ -67,7 +67,7 @@ function ModeToggle({
         )}
       >
         <Cloud className="size-3.5" />
-        Live · Convex
+        Live · pipeline
       </button>
     </div>
   );

@@ -44,6 +44,8 @@ export type EventBundle = {
   outreachDrafts: OutreachDraft[];
   jobs: Job[];
   attendees: LikelyAttendee[];
+  /** True when contacts, drafts, or attendees are frontend demo fallbacks. */
+  usesMockEnrichment: boolean;
 };
 
 export type UseEventBundleResult = {
@@ -52,14 +54,15 @@ export type UseEventBundleResult = {
   hasResults: boolean;
 };
 
-export function useEventBundle(): UseEventBundleResult {
+export function useEventBundle(eventSlug?: string): UseEventBundleResult {
   const { mode, scenario } = useDataMode();
   const isMock = mode === "mock";
+  const slug = eventSlug ?? DEMO_EVENT_SLUG;
 
   // Hooks must run unconditionally; in mock mode we pass "skip" so no network.
   const liveEvent = useQuery(
     api.events.getBySlug,
-    isMock ? "skip" : { slug: DEMO_EVENT_SLUG },
+    isMock ? "skip" : { slug },
   );
   const eventId = liveEvent?._id;
 
@@ -116,14 +119,13 @@ export function useEventBundle(): UseEventBundleResult {
         outreachDrafts: demo.outreachDrafts,
         jobs: demo.jobs,
         attendees: DEMO_SCENARIOS[scenario].attendees,
+        usesMockEnrichment: false,
       },
       isLoading: false,
       hasResults: demo.accountMatches.length > 0,
     };
   }
 
-  // Live mode. Convex Id<> brands are structurally compatible with our
-  // SchruteId<> string brands, so we widen via `unknown` casts at the seam.
   const isLoading = liveEvent === undefined;
 
   if (!liveEvent) {
@@ -135,7 +137,6 @@ export function useEventBundle(): UseEventBundleResult {
   const memo = (liveMemo ?? null) as unknown as DecisionMemo | null;
 
   // Contacts + outreach live behind Nehal's sidecar; no contract query yet.
-  // Fall back to the demo enrichment so the drawer is populated in live mode.
   const demoFallback = DEMO_SCENARIOS.attend.bundle;
 
   const bundle: EventBundle = {
@@ -153,6 +154,7 @@ export function useEventBundle(): UseEventBundleResult {
     outreachDrafts: demoFallback.outreachDrafts,
     jobs: (liveJobs ?? []) as unknown as Job[],
     attendees: DEMO_SCENARIOS.attend.attendees,
+    usesMockEnrichment: true,
   };
 
   return {

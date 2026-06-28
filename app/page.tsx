@@ -12,6 +12,7 @@ import {
   Ticket,
   Users,
 } from "lucide-react";
+import { Info } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/convex/_generated/api";
@@ -35,7 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEMO_SCENARIOS, type DemoScenarioKey } from "@/lib/data/demoBundle";
 import { useDataMode } from "@/lib/data/DataModeContext";
-import { useEventBundle, type EventBundle } from "@/lib/data/useEventBundle";
+import { useEventBundle, DEMO_EVENT_SLUG, type EventBundle } from "@/lib/data/useEventBundle";
 import type { ObjectiveKey, ParticipationKey } from "@/lib/objectives";
 import type { AccountMatch, Job, JobStep } from "@/lib/types";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -57,15 +58,19 @@ const SIM_STEPS: { step: JobStep; message: string }[] = [
 ];
 
 export default function Home() {
-  const seedDemo = useAction(api.orchestrate.seedDemo);
+  const runFromIntro = useAction(api.orchestrate.runFromIntro);
   const { mode, scenario } = useDataMode();
-  const { bundle, isLoading, hasResults } = useEventBundle();
+  const [liveEventSlug, setLiveEventSlug] = React.useState(DEMO_EVENT_SLUG);
+  const { bundle, isLoading } = useEventBundle(
+    mode === "live" ? liveEventSlug : undefined,
+  );
 
   const [phase, setPhase] = React.useState<Phase>("intro");
   const [simJobs, setSimJobs] = React.useState<Job[]>([]);
   const [selected, setSelected] = React.useState<AccountMatch | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [pipelineRunning, setPipelineRunning] = React.useState(false);
   const [intent, setIntent] = React.useState<RunIntent>({
     objective: "spend_decision",
     options: ["attend", "exhibit"],
@@ -77,13 +82,6 @@ export default function Home() {
       if (timer.current) clearTimeout(timer.current);
     };
   }, []);
-
-  // Live mode: once Convex has scored the event, reveal the board.
-  React.useEffect(() => {
-    if (mode === "live" && phase === "running" && hasResults) {
-      setPhase("results");
-    }
-  }, [mode, phase, hasResults]);
 
   // Switching data source / scenario mid-demo: close the drawer cleanly.
   React.useEffect(() => {
@@ -127,6 +125,7 @@ export default function Home() {
     setError(null);
     setPhase("running");
     setSimJobs([]);
+    setPipelineRunning(mode === "live");
     setIntent({
       objective: payload.objective,
       options: payload.options,
@@ -140,13 +139,27 @@ export default function Home() {
     }
 
     try {
-      await seedDemo({});
-      toast.success("Pipeline complete");
+      const result = await runFromIntro({
+        csvText: payload.csvText,
+        eventName: payload.eventName,
+        eventSource: payload.eventSource,
+        sponsorQuote: payload.sponsorQuote || undefined,
+        objective: payload.objective ?? undefined,
+        participationOptions: payload.options,
+        repCount: payload.repCount,
+      });
+      setLiveEventSlug(result.slug);
+      setPhase("results");
+      toast.success(
+        `Pipeline complete — ${result.matchCount} account${result.matchCount === 1 ? "" : "s"} matched`,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Run failed";
       setError(message);
       toast.error(message);
       setPhase("intro");
+    } finally {
+      setPipelineRunning(false);
     }
   }
 
@@ -185,7 +198,8 @@ export default function Home() {
             <RunningView
               bundle={bundle}
               jobs={jobsForRunning}
-              loading={isLoading}
+              loading={isLoading || pipelineRunning}
+              mode={mode}
             />
           ) : null}
 
@@ -193,6 +207,7 @@ export default function Home() {
             <ResultsView
               bundle={bundle}
               intent={intent}
+              mode={mode}
               selectedId={selected?._id ?? null}
               onSelect={openMatch}
               onReset={reset}
@@ -224,13 +239,21 @@ function RunningView({
   bundle,
   jobs,
   loading,
+  mode,
 }: {
   bundle: EventBundle | null;
   jobs: Job[];
   loading: boolean;
+  mode: "mock" | "live";
 }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="space-y-4">
+      {mode === "live" ? (
+        <LivePipelineNotice
+          detail="Running your CRM + event source through Convex and OpenAI. This takes ~10–15 seconds."
+        />
+      ) : null}
+      <div className="grid gap-6 lg:grid-cols-2">
       <div>
         {bundle ? (
           <RevenueProfilePanel
@@ -259,6 +282,33 @@ function RunningView({
           )}
         </CardContent>
       </Card>
+      </div>
+    </div>
+  );
+}
+
+function LivePipelineNotice({ detail }: { detail: string }) {
+  return (
+    <div className="flex gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2.5 text-sm">
+      <Info className="mt-0.5 size-4 shrink-0 text-success" />
+      <div>
+        <span className="font-medium text-foreground">Live · real pipeline</span>
+        <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function MockEnrichmentNotice() {
+  return (
+    <div className="flex gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5 text-sm">
+      <Info className="mt-0.5 size-4 shrink-0 text-warning" />
+      <p className="text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">Demo enrichment data.</span>{" "}
+        Contacts, outreach drafts, and social-post attendees are curated frontend
+        samples until the Fiber sidecar and social signals API are wired. Matches,
+        score, and memo are from the live Convex pipeline.
+      </p>
     </div>
   );
 }
@@ -266,12 +316,14 @@ function RunningView({
 function ResultsView({
   bundle,
   intent,
+  mode,
   selectedId,
   onSelect,
   onReset,
 }: {
   bundle: EventBundle;
   intent: RunIntent;
+  mode: "mock" | "live";
   selectedId: string | null;
   onSelect: (m: AccountMatch) => void;
   onReset: () => void;
@@ -281,6 +333,9 @@ function ResultsView({
 
   return (
     <div className="space-y-6">
+      {mode === "live" && bundle.usesMockEnrichment ? (
+        <MockEnrichmentNotice />
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <EventTitle event={event} />
         <div className="flex items-center gap-2">
@@ -367,9 +422,11 @@ function ResultsView({
           <div>
             <h2 className="font-display text-2xl">Who&apos;s posting about going</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Prospective attendees we surfaced from public social posts, tied
-              back to your accounts. Sorted by how explicit their attendance
-              signal is.
+              Prospective attendees surfaced from public social posts, tied back
+              to your accounts.
+              {bundle.usesMockEnrichment
+                ? " Showing demo samples — not yet from a live social-data source."
+                : ""}
             </p>
           </div>
           <AttendeeList attendees={attendees} />

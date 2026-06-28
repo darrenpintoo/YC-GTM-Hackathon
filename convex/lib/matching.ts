@@ -10,6 +10,12 @@ const DOMAIN_HINTS: Record<string, string> = {
   gilbane: "gilbaneco.com",
   "suffolk construction": "suffolk.com",
   "mccarthy building": "mccarthy.com",
+  "mccarthy building companies": "mccarthy.com",
+  "dpr construction": "dpr.com",
+  webcor: "webcor.com",
+  "hensel phelps": "henselphelps.com",
+  "je dunn construction": "jedunn.com",
+  "gilbane building company": "gilbaneco.com",
   kiewit: "kiewit.com",
   "buildright materials": "buildrightmaterials.com",
 };
