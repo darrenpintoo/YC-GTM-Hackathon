@@ -151,13 +151,34 @@ export const write = internalMutation({
   },
 });
 
+export const markRunning = internalMutation({
+  args: {
+    eventId: v.id("event"),
+    message: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await upsertJob(ctx, args.eventId, "memo", {
+      status: "running",
+      message: args.message ?? "Drafting decision memo…",
+      progress: 15,
+    });
+    return null;
+  },
+});
+
 export const generate = internalMutation({
-  args: { eventId: v.id("event") },
+  args: {
+    eventId: v.id("event"),
+    warmCache: v.optional(v.boolean()),
+  },
   returns: v.id("decisionMemo"),
   handler: async (ctx, args) => {
     await upsertJob(ctx, args.eventId, "memo", {
       status: "running",
-      message: "Generating go/no-go memo",
+      message: args.warmCache
+        ? "Drafting decision memo (cached replay)"
+        : "Generating go/no-go memo",
       progress: 20,
     });
 

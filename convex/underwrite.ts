@@ -6,12 +6,17 @@ import { upsertJob } from "./lib/jobs";
 import { underwritingAssumptionsValidator } from "./lib/validators";
 
 export const scoreEvent = internalMutation({
-  args: { eventId: v.id("event") },
+  args: {
+    eventId: v.id("event"),
+    warmCache: v.optional(v.boolean()),
+  },
   returns: v.id("eventScore"),
   handler: async (ctx, args) => {
     await upsertJob(ctx, args.eventId, "score", {
       status: "running",
-      message: "Running break-even underwriting",
+      message: args.warmCache
+        ? "Running break-even underwriting (cached replay)"
+        : "Running break-even underwriting",
       progress: 20,
     });
 

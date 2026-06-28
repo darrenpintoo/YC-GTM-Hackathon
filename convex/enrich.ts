@@ -52,13 +52,16 @@ export const run = internalAction({
   args: {
     eventId: v.id("event"),
     runIntent: runIntentValidator,
+    warmCache: v.optional(v.boolean()),
   },
   returns: v.object({ attendeeCount: v.number(), contactCount: v.number() }),
   handler: async (ctx, args): Promise<EnrichResult> => {
     await ctx.runMutation(internal.enrich.markStatus, {
       eventId: args.eventId,
       status: "running",
-      message: "Searching public posts for attendees",
+      message: args.warmCache
+        ? "Searching public posts (cached replay)"
+        : "Searching public posts for attendees",
       progress: 15,
     });
 
@@ -149,7 +152,9 @@ export const run = internalAction({
           await ctx.runMutation(internal.enrich.markStatus, {
             eventId: args.eventId,
             status: "running",
-            message: `Revealing attendee contacts (${revealTargets.length})`,
+            message: args.warmCache
+              ? `Revealing attendee contacts (cached Fiber, ${revealTargets.length})`
+              : `Revealing attendee contacts (${revealTargets.length})`,
             progress: 55,
           });
 

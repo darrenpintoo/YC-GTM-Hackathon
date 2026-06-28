@@ -32,7 +32,7 @@ export default defineSchema({
     rawAiJson: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
-  }),
+  }).index("by_name", ["name"]),
 
   crmAccount: defineTable({
     revenueProfileId: v.id("revenueProfile"),

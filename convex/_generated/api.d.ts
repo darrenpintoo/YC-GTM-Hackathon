@@ -9,6 +9,7 @@
  */
 
 import type * as contracts from "../contracts.js";
+import type * as debug from "../debug.js";
 import type * as enrich from "../enrich.js";
 import type * as events from "../events.js";
 import type * as ingest from "../ingest.js";
@@ -27,12 +28,14 @@ import type * as lib_normalize from "../lib/normalize.js";
 import type * as lib_openai from "../lib/openai.js";
 import type * as lib_plainFetch from "../lib/plainFetch.js";
 import type * as lib_profileHeuristic from "../lib/profileHeuristic.js";
+import type * as lib_redisCache from "../lib/redisCache.js";
 import type * as lib_scrapeCache from "../lib/scrapeCache.js";
 import type * as lib_slugify from "../lib/slugify.js";
 import type * as lib_sourceQuality from "../lib/sourceQuality.js";
 import type * as lib_sourceRank from "../lib/sourceRank.js";
 import type * as lib_underwriting from "../lib/underwriting.js";
 import type * as lib_validators from "../lib/validators.js";
+import type * as lib_warmPace from "../lib/warmPace.js";
 import type * as matcher from "../matcher.js";
 import type * as memo from "../memo.js";
 import type * as orchestrate from "../orchestrate.js";
@@ -50,6 +53,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   contracts: typeof contracts;
+  debug: typeof debug;
   enrich: typeof enrich;
   events: typeof events;
   ingest: typeof ingest;
@@ -68,12 +72,14 @@ declare const fullApi: ApiFromModules<{
   "lib/openai": typeof lib_openai;
   "lib/plainFetch": typeof lib_plainFetch;
   "lib/profileHeuristic": typeof lib_profileHeuristic;
+  "lib/redisCache": typeof lib_redisCache;
   "lib/scrapeCache": typeof lib_scrapeCache;
   "lib/slugify": typeof lib_slugify;
   "lib/sourceQuality": typeof lib_sourceQuality;
   "lib/sourceRank": typeof lib_sourceRank;
   "lib/underwriting": typeof lib_underwriting;
   "lib/validators": typeof lib_validators;
+  "lib/warmPace": typeof lib_warmPace;
   matcher: typeof matcher;
   memo: typeof memo;
   orchestrate: typeof orchestrate;

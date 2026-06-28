@@ -1,4 +1,5 @@
 import { eventExtractionSchema, revenueProfileSchema } from "../../lib/aiSchemas";
+import { withRedisCache } from "./redisCache";
 
 type JsonSchema = {
   name: string;
@@ -10,6 +11,31 @@ export async function callOpenAiJson<T>(args: {
   system: string;
   user: string;
   responseSchema: JsonSchema;
+  model?: string;
+}): Promise<T | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const model = args.model ?? "gpt-4o-mini";
+  const { value } = await withRedisCache<T>({
+    namespace: "openai-json",
+    keyParts: [
+      model,
+      args.responseSchema.name,
+      args.system,
+      args.user,
+      JSON.stringify(args.responseSchema.schema),
+    ],
+    fetch: async () => callOpenAiJsonLive<T>({ ...args, model }),
+  });
+  return value;
+}
+
+async function callOpenAiJsonLive<T>(args: {
+  system: string;
+  user: string;
+  responseSchema: JsonSchema;
+  model: string;
 }): Promise<T | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -21,7 +47,7 @@ export async function callOpenAiJson<T>(args: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: args.model,
       messages: [
         { role: "system", content: args.system },
         { role: "user", content: args.user },
@@ -63,6 +89,30 @@ export async function callOpenAiWebSearch<T>(args: {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
+  const model = args.model ?? "gpt-4o";
+  const { value } = await withRedisCache<T>({
+    namespace: "openai-web-search",
+    keyParts: [
+      model,
+      args.responseSchema.name,
+      args.instructions,
+      args.input,
+      JSON.stringify(args.responseSchema.schema),
+    ],
+    fetch: async () => callOpenAiWebSearchLive<T>({ ...args, model }),
+  });
+  return value;
+}
+
+async function callOpenAiWebSearchLive<T>(args: {
+  instructions: string;
+  input: string;
+  responseSchema: JsonSchema;
+  model: string;
+}): Promise<T | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -71,7 +121,7 @@ export async function callOpenAiWebSearch<T>(args: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: args.model ?? "gpt-4o",
+        model: args.model,
         instructions: args.instructions,
         input: args.input,
         tools: [{ type: "web_search" }],

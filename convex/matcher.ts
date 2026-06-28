@@ -5,12 +5,17 @@ import { upsertJob } from "./lib/jobs";
 import type { Id } from "./_generated/dataModel";
 
 export const run = internalMutation({
-  args: { eventId: v.id("event") },
+  args: {
+    eventId: v.id("event"),
+    warmCache: v.optional(v.boolean()),
+  },
   returns: v.number(),
   handler: async (ctx, args) => {
     await upsertJob(ctx, args.eventId, "match", {
       status: "running",
-      message: "Matching confirmed companies to CRM accounts",
+      message: args.warmCache
+        ? "Matching confirmed companies (cached replay)"
+        : "Matching confirmed companies to CRM accounts",
       progress: 10,
     });
 

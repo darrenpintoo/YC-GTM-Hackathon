@@ -8,6 +8,7 @@ import {
   categorySortKey,
   scoreSourceQuality,
 } from "./lib/sourceQuality";
+import { paceWarmStage } from "./lib/warmPace";
 import {
   AI_GUARDRAILS,
   companyFilterSchema,
@@ -58,6 +59,7 @@ export const runFullPipeline = internalAction({
     eventName: v.string(),
     eventSource: v.string(),
     runIntent: runIntentValidator,
+    warmCache: v.optional(v.boolean()),
   },
   returns: v.object({
     matchCount: v.number(),
@@ -76,44 +78,78 @@ export const runFullPipeline = internalAction({
       eventId: args.eventId,
       eventName: args.eventName,
       eventSource: args.eventSource,
+      warmCache: args.warmCache,
     });
+
+    if (args.warmCache) {
+      await paceWarmStage("gather");
+    }
 
     // 1. Extract companies across ALL gathered sources — AI first, heuristic
     // fallback per document.
     await ctx.runMutation(internal.ingest.markExtractRunning, {
       eventId: args.eventId,
+      message: args.warmCache
+        ? "Reading sources (cached extraction replay)…"
+        : undefined,
     });
-    const extracted = await runMultiDocExtraction(ctx, args.eventId);
+    const extracted = await runMultiDocExtraction(
+      ctx,
+      args.eventId,
+      args.warmCache,
+    );
     if (!extracted) {
       await ctx.runMutation(internal.ingest.extractAllHeuristic, {
         eventId: args.eventId,
       });
     }
 
+    if (args.warmCache) {
+      await paceWarmStage("extract");
+    }
+
     // 2. Match against the revenue profile / CRM.
     const matchCount: number = await ctx.runMutation(internal.matcher.run, {
       eventId: args.eventId,
+      warmCache: args.warmCache,
     });
+
+    if (args.warmCache) {
+      await paceWarmStage("match");
+    }
 
     // 3. Underwrite (deterministic — owns the break-even formula).
     const eventScoreId: Id<"eventScore"> = await ctx.runMutation(
       internal.underwrite.scoreEvent,
-      { eventId: args.eventId },
+      { eventId: args.eventId, warmCache: args.warmCache },
     );
 
+    if (args.warmCache) {
+      await paceWarmStage("score");
+    }
+
     // 4. Decision memo — AI first, heuristic fallback.
-    const aiMemoId = await runAiMemo(ctx, args.eventId, args.runIntent);
+    const aiMemoId = await runAiMemo(ctx, args.eventId, args.runIntent, args.warmCache);
     const decisionMemoId: Id<"decisionMemo"> =
       aiMemoId ??
       (await ctx.runMutation(internal.memo.generate, {
         eventId: args.eventId,
+        warmCache: args.warmCache,
       }));
+
+    if (args.warmCache) {
+      await paceWarmStage("memo");
+    }
 
     // 5. Enrichment sidecar — runs in the background so results show now and
     // the People tab fills in reactively as web search + Fiber complete.
+    if (args.warmCache) {
+      await paceWarmStage("enrichKickoff");
+    }
     await ctx.scheduler.runAfter(0, internal.enrich.run, {
       eventId: args.eventId,
       runIntent: args.runIntent,
+      warmCache: args.warmCache,
     });
 
     return {
@@ -132,6 +168,7 @@ export const runFullPipeline = internalAction({
 async function runMultiDocExtraction(
   ctx: ActionCtx,
   eventId: Id<"event">,
+  warmCache?: boolean,
 ): Promise<boolean> {
   try {
     const [docs, extractCtx] = await Promise.all([
@@ -276,7 +313,9 @@ async function runMultiDocExtraction(
       processed += chunk.length;
       await ctx.runMutation(internal.ingest.markExtractRunning, {
         eventId,
-        message: `Reading sources ${processed}/${usableDocs.length}${skipped > 0 ? ` · ${skipped} skipped (low signal)` : ""}…`,
+        message: warmCache
+          ? `Reading sources ${processed}/${usableDocs.length} (cached)${skipped > 0 ? ` · ${skipped} skipped` : ""}…`
+          : `Reading sources ${processed}/${usableDocs.length}${skipped > 0 ? ` · ${skipped} skipped (low signal)` : ""}…`,
         progress: Math.min(
           90,
           10 + Math.round((processed / usableDocs.length) * 80),
@@ -387,10 +426,18 @@ async function runAiMemo(
     participationOptions?: string[];
     repCount?: number;
   },
+  warmCache?: boolean,
 ): Promise<Id<"decisionMemo"> | null> {
   try {
     const inputs = await ctx.runQuery(internal.memo.getInputs, { eventId });
     if (!inputs) return null;
+
+    if (warmCache) {
+      await ctx.runMutation(internal.memo.markRunning, {
+        eventId,
+        message: "Drafting memo (cached replay)…",
+      });
+    }
 
     const ai = await callOpenAiJson<DecisionMemoOutput>({
       system: `${AI_GUARDRAILS}\nYou are Schrute, a blunt GTM analyst for construction and industrial field sales. Write a go/no-go memo for whether a B2B team should spend on this event. Be concise and decisive. Address how to show up: attend (send reps), sponsor, speak, or exhibit (booth) when the user's participation options are provided. citationQuotes MUST be copied verbatim from the evidence quotes provided — never invent quotes. Align verdict with the underwriting recommendation unless the evidence clearly contradicts it.`,
