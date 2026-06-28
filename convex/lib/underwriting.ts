@@ -113,14 +113,14 @@ function pickRecommendation(args: {
   matchedPipelineValue: number;
   rationale: string[];
 }): Recommendation {
-  if (args.avgMatchConfidence < 0.45) {
-    args.rationale.push("Evidence confidence is low — need better source documents.");
-    return "ask_for_data";
-  }
-
   if (args.tier1MatchCount === 0 && args.matchedPipelineValue < 50000) {
     args.rationale.push("No Tier-1 CRM presence and weak pipeline match.");
     return "skip";
+  }
+
+  if (args.avgMatchConfidence < 0.45) {
+    args.rationale.push("Evidence confidence is low — need better source documents.");
+    return "ask_for_data";
   }
 
   if (

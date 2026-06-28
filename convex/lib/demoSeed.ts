@@ -38,11 +38,52 @@ ConcreteFlow Co — Booth S5120
 Note: Cached snapshot for offline ingest when live URL fetch is unavailable.`;
 
 export const DEMO_EVENT = {
+  name: "ASSP Safety 2026",
+  slug: "assp-safety-2026",
+  startDate: "2026-06-15",
+  endDate: "2026-06-17",
+  location: "Anaheim, CA",
+  sponsorQuote: 25000,
+  profileName: "SafeSite OS",
+};
+
+export const SKIP_SOURCE_URL =
+  "https://www.worldofconcrete.com/home/innovative-product-awards/ipa-vote/";
+
+export const SKIP_SOURCE_TITLE =
+  "World of Concrete 2026 Innovative Product Awards (supplier excerpt)";
+
+export const SKIP_SOURCE_SNAPSHOT = `World of Concrete 2026 - Innovative Product Awards and Featured Exhibitor Demos source excerpt
+Source URL: https://www.worldofconcrete.com/home/innovative-product-awards/ipa-vote/
+Additional source URL: https://www.worldofconcrete.com/home/exhibitor-demos/
+Retrieved: 2026-06-28
+
+HILTI - Booth O30329
+INTUIT ENTERPRISE SUITE - Booth N1369
+POLYGLASS - Booth O31601
+Stego Industries - Booth S13032
+Nox-Crete Inc. - Booth C4031
+Bekaert Corporation - Booth N2836
+SpiderLath - Booth S12410
+Trimble - Booth N1513
+Foundation Software - Booth N1849
+Command Alkon - Booth N1536
+Master Builders Solutions - Booth S11115
+Sage - Booth N1554
+EquipmentShare - Booth N254
+Giatec Scientific Inc. - Booth N1237
+ProAll A Terex Brand - Booth C5176
+CapLock Work Safety LLC - Booth C3113
+Werner - Booth C4455
+Klein Tools - Booth C6091
+CS Unitec - Booth O31313`;
+
+export const SKIP_EVENT = {
   name: "World of Concrete 2026",
-  slug: "world-of-concrete-2026",
+  slug: "world-of-concrete-2026-real",
   startDate: "2026-01-20",
   endDate: "2026-01-22",
   location: "Las Vegas, NV",
   sponsorQuote: 25000,
-  profileName: "SafeSite OS",
+  profileName: "SafeSite OS - WOC control",
 };
