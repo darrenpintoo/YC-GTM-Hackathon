@@ -95,6 +95,10 @@ export const runFullPipeline = internalAction({
       eventId: args.eventId,
     });
 
+    await ctx.runAction(internal.enrich.generateMeetingReasons, {
+      eventId: args.eventId,
+    });
+
     // 3. Underwrite (deterministic — owns the break-even formula).
     const eventScoreId: Id<"eventScore"> = await ctx.runMutation(
       internal.underwrite.scoreEvent,

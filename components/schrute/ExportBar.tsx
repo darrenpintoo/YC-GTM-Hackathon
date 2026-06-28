@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileJson, UploadCloud } from "lucide-react";
+import { Download, FileJson } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -107,12 +107,6 @@ export function ExportBar({
     toast.success("Exported worklist as JSON");
   }
 
-  function pushToCrm() {
-    toast.success(`${matches.length} accounts queued to push to CRM`, {
-      description: "HubSpot / Salesforce write-back is on the roadmap.",
-    });
-  }
-
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
       <div className="text-sm">
@@ -129,10 +123,6 @@ export function ExportBar({
         <Button variant="outline" size="sm" onClick={exportJson}>
           <FileJson className="size-4" />
           JSON
-        </Button>
-        <Button size="sm" onClick={pushToCrm}>
-          <UploadCloud className="size-4" />
-          Push to CRM
         </Button>
       </div>
     </div>

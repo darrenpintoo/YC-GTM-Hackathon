@@ -73,6 +73,8 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
     new Set(["attend", "exhibit"]),
   );
   const [adaptive, setAdaptive] = React.useState<Record<string, string>>({});
+  /** Explicit rep count; undefined = not chosen yet (Schrute assumes 2 in verdicts). */
+  const [repCount, setRepCount] = React.useState<number | undefined>(undefined);
 
   const objectiveDef = OBJECTIVES.find((o) => o.key === objective) ?? null;
 
@@ -135,7 +137,13 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
   const ready = companyCount > 0 && eventName.trim() && eventSource.trim() && objective;
 
   function handleRun() {
-    const repCount = adaptive.repCount ? Number(adaptive.repCount) : undefined;
+    const adaptiveRep =
+      objective === "spend_decision"
+        ? repCount
+        : adaptive.repCount !== undefined && adaptive.repCount !== ""
+          ? Number(adaptive.repCount)
+          : undefined;
+
     onRun({
       csvText,
       csvFileName,
@@ -145,8 +153,16 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
       sponsorQuote: Number(sponsorQuote) || 0,
       objective,
       options: [...options],
-      repCount: Number.isFinite(repCount) ? repCount : undefined,
-      adaptiveAnswers: adaptive,
+      repCount:
+        adaptiveRep !== undefined && Number.isFinite(adaptiveRep)
+          ? adaptiveRep
+          : undefined,
+      adaptiveAnswers: {
+        ...adaptive,
+        ...(objective === "spend_decision" && repCount !== undefined
+          ? { repCount: String(repCount) }
+          : {}),
+      },
     });
   }
 
@@ -155,18 +171,16 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
       <div className="grid items-start gap-10 lg:grid-cols-[1.05fr_1fr]">
         {/* Left — narrative + inputs */}
         <div>
-          <p className="eyebrow text-success">Know before you commit</p>
-          <h1 className="mt-3 font-display text-4xl leading-[1.05] sm:text-5xl">
-            Stop guessing which trade shows are{" "}
-            <span className="italic text-muted-foreground">worth it.</span>
+          <p className="eyebrow text-success">
+            Built for construction and industrial teams.
+          </p>
+          <h1 className="mt-3 font-display text-5xl font-semibold leading-[0.98] sm:text-6xl">
+            Know the ROI{" "}
+            <span className="italic text-muted-foreground">before you RSVP.</span>
           </h1>
-          <p className="mt-4 max-w-md text-muted-foreground">
-            Your buyers aren&apos;t answering cold emails — but they&apos;re
-            walking the floor at World of Concrete, CONEXPO, and NSC with budget
-            in hand. Schrute matches your pipeline to who&apos;s actually there,
-            then tells you whether to{" "}
-            <span className="text-foreground">attend, sponsor, speak, or exhibit</span>{" "}
-            — before you commit the spend.
+          <p className="mt-4 max-w-md text-lg leading-relaxed text-muted-foreground">
+            Instead of spending $10K on a show and leaving with no leads, know
+            your ROI before you commit - booth, sponsorship, travel, or badges.
           </p>
 
           <ol className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
@@ -246,7 +260,7 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
                 />
               </div>
               <div>
-                <FieldLabel>Sponsor quote ($)</FieldLabel>
+                <FieldLabel>Sponsor quote ($) optional</FieldLabel>
                 <Input
                   value={sponsorQuote}
                   onChange={(e) => setSponsorQuote(e.target.value)}
@@ -309,6 +323,7 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
             <div className="mt-2.5 flex flex-wrap gap-2">
               {PARTICIPATION.map((p) => {
                 const active = options.has(p.key);
+                const noRepAttend = p.key === "attend" && repCount === 0;
                 return (
                   <button
                     key={p.key}
@@ -316,10 +331,17 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
                     onClick={() => toggleOption(p.key)}
                     className={cn(
                       "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-                      active
-                        ? "border-foreground/20 bg-foreground text-background"
-                        : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+                      noRepAttend && active
+                        ? "border-destructive/30 bg-destructive/10 text-destructive"
+                        : active
+                          ? "border-foreground/20 bg-foreground text-background"
+                          : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground",
                     )}
+                    title={
+                      noRepAttend
+                        ? "Attend is weaker when no reps are on the ground."
+                        : undefined
+                    }
                   >
                     {PARTICIPATION_ICONS[p.key]}
                     {p.title}
@@ -327,22 +349,37 @@ export function UploadIntro({ running, onRun }: UploadIntroProps) {
                 );
               })}
             </div>
+            {repCount === 0 && options.has("attend") ? (
+              <p className="mt-2 text-xs text-destructive">
+                Attend is dimmed because badges without reps do not create
+                meetings.
+              </p>
+            ) : null}
           </div>
 
           {objectiveDef ? (
             <div className="mt-5">
-              <FieldLabel>{objectiveDef.question.label}</FieldLabel>
-              <Input
-                value={adaptive[objectiveDef.question.field] ?? ""}
-                onChange={(e) =>
-                  setAdaptive((prev) => ({
-                    ...prev,
-                    [objectiveDef.question.field]: e.target.value,
-                  }))
-                }
-                placeholder={objectiveDef.question.placeholder}
-                inputMode={objectiveDef.question.inputMode}
-              />
+              {objectiveDef.question.field === "repCount" ? (
+                <RepCountSelector
+                  value={repCount}
+                  onChange={setRepCount}
+                />
+              ) : (
+                <>
+                  <FieldLabel>{objectiveDef.question.label}</FieldLabel>
+                  <Input
+                    value={adaptive[objectiveDef.question.field] ?? ""}
+                    onChange={(e) =>
+                      setAdaptive((prev) => ({
+                        ...prev,
+                        [objectiveDef.question.field]: e.target.value,
+                      }))
+                    }
+                    placeholder={objectiveDef.question.placeholder}
+                    inputMode={objectiveDef.question.inputMode}
+                  />
+                </>
+              )}
             </div>
           ) : null}
 
@@ -385,5 +422,139 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
       {children}
     </label>
+  );
+}
+
+const REP_PRESETS = [
+  { value: 0, label: "None", hint: "Outreach-only or skipped sending reps" },
+  { value: 1, label: "1", hint: "One rep on the floor" },
+  { value: 2, label: "2", hint: "Typical AE + SE pair" },
+  { value: 3, label: "3", hint: "Heavier coverage" },
+] as const;
+
+function RepCountSelector({
+  value,
+  onChange,
+}: {
+  value: number | undefined;
+  onChange: (value: number | undefined) => void;
+}) {
+  const [customMode, setCustomMode] = React.useState(false);
+  const [customValue, setCustomValue] = React.useState("");
+
+  const presetActive = (n: number) => !customMode && value === n;
+  const unsureActive = !customMode && value === undefined;
+  const showCustomInput = customMode || (value !== undefined && value >= 4);
+
+  React.useEffect(() => {
+    if (value !== undefined && value >= 4) {
+      setCustomMode(true);
+      setCustomValue(String(value));
+    }
+  }, [value]);
+
+  function selectPreset(n: number) {
+    setCustomMode(false);
+    setCustomValue("");
+    onChange(n);
+  }
+
+  function selectUnsure() {
+    setCustomMode(false);
+    setCustomValue("");
+    onChange(undefined);
+  }
+
+  const activeHint =
+    customMode && value === undefined
+      ? "Enter the exact number of reps you expect to send."
+      : value === undefined
+      ? "Not sure yet — Schrute keeps the 2-rep assumption for math and labels the verdict as hypothetical."
+      : value === 0
+      ? REP_PRESETS[0].hint
+      : value != null && value > 0 && value <= 3
+        ? REP_PRESETS.find((p) => p.value === value)?.hint
+        : value != null && value >= 4
+          ? `${value} reps — exact headcount used in the verdict`
+          : "Pick a headcount. Zero is valid if nobody went or you're planning outreach-only.";
+
+  return (
+    <div>
+      <FieldLabel>How many reps will be on the ground?</FieldLabel>
+      <p className="mb-2.5 text-xs leading-relaxed text-muted-foreground">
+        Use Not sure if headcount is undecided. Choose None for outreach-only.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={selectUnsure}
+          className={cn(
+            "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+            unsureActive
+              ? "border-warning/30 bg-warning/10 text-warning"
+              : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+          )}
+        >
+          Not sure
+        </button>
+        {REP_PRESETS.map((preset) => (
+          <button
+            key={preset.value}
+            type="button"
+            onClick={() => selectPreset(preset.value)}
+            className={cn(
+              "min-w-[3.25rem] rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+              presetActive(preset.value)
+                ? preset.value === 0
+                  ? "border-destructive/30 bg-destructive/10 text-destructive"
+                  : "border-foreground/20 bg-foreground text-background"
+                : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+            )}
+          >
+            {preset.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            setCustomMode(true);
+            if (value != null && value >= 4) {
+              setCustomValue(String(value));
+            } else {
+              setCustomValue("");
+              onChange(undefined);
+            }
+          }}
+          className={cn(
+            "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+            showCustomInput
+              ? "border-foreground/20 bg-foreground text-background"
+              : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+          )}
+        >
+          Exact
+        </button>
+      </div>
+      {showCustomInput ? (
+        <div className="mt-2.5 flex items-center gap-2">
+          <Input
+            value={customValue}
+            onChange={(e) => {
+              const next = e.target.value.replace(/\D/g, "");
+              setCustomValue(next);
+              const parsed = Number(next);
+              onChange(
+                next === "" ? undefined : Number.isFinite(parsed) ? parsed : undefined,
+              );
+            }}
+            placeholder="Enter #"
+            inputMode="numeric"
+            className="max-w-[5rem]"
+          />
+          <span className="text-xs text-muted-foreground">reps</span>
+        </div>
+      ) : null}
+      <p className="mt-2 text-xs text-muted-foreground">{activeHint}</p>
+    </div>
   );
 }
