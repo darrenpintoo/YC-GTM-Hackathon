@@ -10,6 +10,7 @@ import {
   Radar,
   RotateCcw,
   Ticket,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,11 +18,13 @@ import { api } from "@/convex/_generated/api";
 import { AccountBoard } from "@/components/schrute/AccountBoard";
 import { AccountDrawer } from "@/components/schrute/AccountDrawer";
 import { AppHeader } from "@/components/schrute/AppHeader";
+import { AttendeeList } from "@/components/schrute/AttendeeList";
 import { EvidenceInspectorProvider } from "@/components/schrute/EvidenceInspector";
 import { ExportBar } from "@/components/schrute/ExportBar";
 import { JobProgress } from "@/components/schrute/JobProgress";
+import { OutcomeWheel } from "@/components/schrute/OutcomeWheel";
+import { ParticipationVerdict } from "@/components/schrute/ParticipationVerdict";
 import { PortfolioPlanner } from "@/components/schrute/PortfolioPlanner";
-import { ResultsSummary } from "@/components/schrute/ResultsSummary";
 import { RevenueProfilePanel } from "@/components/schrute/RevenueProfilePanel";
 import { UploadIntro, type IntroPayload } from "@/components/schrute/UploadIntro";
 import { VerdictMemo } from "@/components/schrute/VerdictMemo";
@@ -33,8 +36,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEMO_SCENARIOS, type DemoScenarioKey } from "@/lib/data/demoBundle";
 import { useDataMode } from "@/lib/data/DataModeContext";
 import { useEventBundle, type EventBundle } from "@/lib/data/useEventBundle";
+import type { ObjectiveKey, ParticipationKey } from "@/lib/objectives";
 import type { AccountMatch, Job, JobStep } from "@/lib/types";
 import { cn, formatCurrency } from "@/lib/utils";
+
+export type RunIntent = {
+  objective: ObjectiveKey | null;
+  options: ParticipationKey[];
+  repCount?: number;
+};
 
 type Phase = "intro" | "running" | "results";
 
@@ -56,6 +66,10 @@ export default function Home() {
   const [selected, setSelected] = React.useState<AccountMatch | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [intent, setIntent] = React.useState<RunIntent>({
+    objective: "spend_decision",
+    options: ["attend", "exhibit"],
+  });
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -113,6 +127,11 @@ export default function Home() {
     setError(null);
     setPhase("running");
     setSimJobs([]);
+    setIntent({
+      objective: payload.objective,
+      options: payload.options,
+      repCount: payload.repCount,
+    });
     toast(`Reading ${payload.eventName} against ${payload.companyCount} accounts…`);
 
     if (mode === "mock") {
@@ -173,6 +192,7 @@ export default function Home() {
           {phase === "results" && bundle ? (
             <ResultsView
               bundle={bundle}
+              intent={intent}
               selectedId={selected?._id ?? null}
               onSelect={openMatch}
               onReset={reset}
@@ -245,19 +265,22 @@ function RunningView({
 
 function ResultsView({
   bundle,
+  intent,
   selectedId,
   onSelect,
   onReset,
 }: {
   bundle: EventBundle;
+  intent: RunIntent;
   selectedId: string | null;
   onSelect: (m: AccountMatch) => void;
   onReset: () => void;
 }) {
-  const { event, matches, score, memo, contacts, outreachDrafts } = bundle;
+  const { event, matches, score, memo, contacts, outreachDrafts, attendees } =
+    bundle;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <EventTitle event={event} />
         <div className="flex items-center gap-2">
@@ -269,11 +292,15 @@ function ResultsView({
         </div>
       </div>
 
-      <Tabs defaultValue="event" className="gap-5">
+      <Tabs defaultValue="event" className="gap-6">
         <TabsList>
           <TabsTrigger value="event">
             <LayoutGrid className="size-4" />
-            This event
+            Outcome
+          </TabsTrigger>
+          <TabsTrigger value="people">
+            <Users className="size-4" />
+            People ({attendees.length})
           </TabsTrigger>
           <TabsTrigger value="portfolio">
             <Plane className="size-4" />
@@ -281,9 +308,29 @@ function ResultsView({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="event" className="space-y-5">
+        <TabsContent value="event" className="space-y-6">
           {score ? (
-            <ResultsSummary score={score} matches={matches} memo={memo} />
+            <OutcomeWheel
+              event={event}
+              score={score}
+              matches={matches}
+              memo={memo}
+              attendees={attendees}
+              contacts={contacts}
+              outreachDrafts={outreachDrafts}
+              onOpenAccount={onSelect}
+            />
+          ) : null}
+
+          {score ? (
+            <ParticipationVerdict
+              objective={intent.objective}
+              options={intent.options}
+              score={score}
+              event={event}
+              matches={matches}
+              repCount={intent.repCount}
+            />
           ) : null}
 
           <ExportBar
@@ -314,6 +361,18 @@ function ResultsView({
               />
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="people" className="space-y-4">
+          <div>
+            <h2 className="font-display text-2xl">Who&apos;s posting about going</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Prospective attendees we surfaced from public social posts, tied
+              back to your accounts. Sorted by how explicit their attendance
+              signal is.
+            </p>
+          </div>
+          <AttendeeList attendees={attendees} />
         </TabsContent>
 
         <TabsContent value="portfolio">
@@ -359,7 +418,7 @@ function EventTitle({ event }: { event: EventBundle["event"] }) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold tracking-tight">{event.name}</h1>
+      <h1 className="font-display text-3xl">{event.name}</h1>
       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
         {dates ? (
           <span className="flex items-center gap-1.5">

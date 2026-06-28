@@ -607,14 +607,182 @@ export const demoSkipBundle: SchruteDemoBundle = {
   jobs: skipJobs,
 };
 
+// ---------------------------------------------------------------------------
+// Likely attendees (social signals)
+//
+// Honest framing: these are people who PUBLICLY POSTED about going. We quote the
+// post and attach a confidence. We never claim to know who'll show up — we
+// surface self-declared intent and tie it back to a matched account.
+// (Demo data; real version swaps in a social-data API. LinkedIn scraping is
+// ToS-sensitive, so this is intentionally a clean seam, not live scraping.)
+// ---------------------------------------------------------------------------
+
+export type AttendeeNetwork = "linkedin" | "x";
+
+export type LikelyAttendee = {
+  id: string;
+  fullName: string;
+  title: string;
+  companyName: string;
+  /** Ties back to an AccountMatch (`demo_match_<key>`) when the company matched. */
+  accountMatchId?: string;
+  matchTier?: MatchTier;
+  network: AttendeeNetwork;
+  postQuote: string;
+  postedAt: string;
+  /** 0–1, how explicit the attendance signal is. */
+  confidence: number;
+  profileUrl: string;
+};
+
+export const demoAttendees: LikelyAttendee[] = [
+  {
+    id: "att_turner_marcus",
+    fullName: "Marcus Hill",
+    title: "Senior Project Manager",
+    companyName: "Turner Construction",
+    accountMatchId: "demo_match_turner",
+    matchTier: "tier1_crm",
+    network: "linkedin",
+    postQuote:
+      "Heading to World of Concrete next week 🚧 Stop by Booth N1234 if you want to talk jobsite safety tech and what we're rolling out in 2026. #WOC2026",
+    postedAt: "2026-01-12",
+    confidence: 0.96,
+    profileUrl: "https://www.linkedin.com/in/marcus-hill-turner",
+  },
+  {
+    id: "att_skanska_elena",
+    fullName: "Elena Park",
+    title: "EHS Program Lead",
+    companyName: "Skanska USA",
+    accountMatchId: "demo_match_skanska",
+    matchTier: "tier1_crm",
+    network: "linkedin",
+    postQuote:
+      "Excited for #WorldOfConcrete! I'll be at Booth S4521 talking through our incident-reporting rollout. Always happy to swap notes with other EHS folks.",
+    postedAt: "2026-01-10",
+    confidence: 0.94,
+    profileUrl: "https://www.linkedin.com/in/elena-park-ehs",
+  },
+  {
+    id: "att_mccarthy_dwight",
+    fullName: "Dwight Powell",
+    title: "VP Field Operations",
+    companyName: "McCarthy Building Companies",
+    accountMatchId: "demo_match_mccarthy",
+    matchTier: "tier1_crm",
+    network: "linkedin",
+    postQuote:
+      "Proud to be a Gold Sponsor at World of Concrete 2026. Come find the McCarthy team on the floor — let's talk safety culture. ☕",
+    postedAt: "2026-01-08",
+    confidence: 0.92,
+    profileUrl: "https://www.linkedin.com/in/dwight-powell-mccarthy",
+  },
+  {
+    id: "att_dpr_tom",
+    fullName: "Tom Reyes",
+    title: "Director of EHS",
+    companyName: "DPR Construction",
+    accountMatchId: "demo_match_dpr",
+    matchTier: "tier1_crm",
+    network: "x",
+    postQuote:
+      "Walking the floor at WoC this year — DPR's at C2210. DM me if you want to connect on safety tooling.",
+    postedAt: "2026-01-14",
+    confidence: 0.83,
+    profileUrl: "https://x.com/tomreyes_ehs",
+  },
+  {
+    id: "att_buildright_priya",
+    fullName: "Priya Shah",
+    title: "Head of Field Operations",
+    companyName: "BuildRight Materials",
+    accountMatchId: "demo_match_buildright",
+    matchTier: "tier2_icp",
+    network: "linkedin",
+    postQuote:
+      "First time exhibiting at World of Concrete! 🎉 Booth W2201 — come say hi and see what we've been building. #construction #WOC2026",
+    postedAt: "2026-01-09",
+    confidence: 0.9,
+    profileUrl: "https://www.linkedin.com/in/priya-shah-buildright",
+  },
+  {
+    id: "att_gilbane_sandra",
+    fullName: "Sandra Lowe",
+    title: "Project Executive",
+    companyName: "Gilbane Building Company",
+    accountMatchId: "demo_match_gilbane",
+    matchTier: "tier1_crm",
+    network: "linkedin",
+    postQuote:
+      "Counting down to World of Concrete. Who else from the GC world is going to be in Vegas? Let's grab coffee. ☕",
+    postedAt: "2026-01-11",
+    confidence: 0.61,
+    profileUrl: "https://www.linkedin.com/in/sandra-lowe-gilbane",
+  },
+  {
+    id: "att_sitesecure_andre",
+    fullName: "André Castro",
+    title: "Co-founder & CEO",
+    companyName: "SiteSecure Systems",
+    accountMatchId: "demo_match_sitesecure",
+    matchTier: "tier2_icp",
+    network: "linkedin",
+    postQuote:
+      "We're exhibiting at #WOC2026! Booth C3015. If safety + IoT on the jobsite is your thing, let's talk.",
+    postedAt: "2026-01-07",
+    confidence: 0.88,
+    profileUrl: "https://www.linkedin.com/in/andre-castro-sitesecure",
+  },
+  {
+    id: "att_clark_renee",
+    fullName: "Renee Walsh",
+    title: "VP Safety",
+    companyName: "Clark Construction",
+    accountMatchId: "demo_match_clark",
+    matchTier: "tier1_crm",
+    network: "linkedin",
+    postQuote:
+      "Looking forward to World of Concrete — Clark will be at C1102. Reach out if you want time on the calendar before the show fills up.",
+    postedAt: "2026-01-13",
+    confidence: 0.87,
+    profileUrl: "https://www.linkedin.com/in/renee-walsh-clark",
+  },
+];
+
+const demoSkipAttendees: LikelyAttendee[] = [
+  {
+    id: "att_kiewit_glenn",
+    fullName: "Glenn Foster",
+    title: "Safety Coordinator",
+    companyName: "Kiewit",
+    accountMatchId: "demo_skip_match_kiewit",
+    matchTier: "tier1_crm",
+    network: "linkedin",
+    postQuote:
+      "Might swing by the Regional Builders Expo in Columbus if the schedule allows. Anyone else going?",
+    postedAt: "2026-03-02",
+    confidence: 0.42,
+    profileUrl: "https://www.linkedin.com/in/glenn-foster-kiewit",
+  },
+];
+
 export type DemoScenarioKey = "attend" | "skip";
 
 export const DEMO_SCENARIOS: Record<
   DemoScenarioKey,
-  { label: string; bundle: SchruteDemoBundle }
+  { label: string; bundle: SchruteDemoBundle; attendees: LikelyAttendee[] }
 > = {
-  attend: { label: "World of Concrete (Attend)", bundle: demoAttendBundle },
-  skip: { label: "Regional Builders Expo (Skip)", bundle: demoSkipBundle },
+  attend: {
+    label: "World of Concrete (Attend)",
+    bundle: demoAttendBundle,
+    attendees: demoAttendees,
+  },
+  skip: {
+    label: "Regional Builders Expo (Skip)",
+    bundle: demoSkipBundle,
+    attendees: demoSkipAttendees,
+  },
 };
 
 // ---------------------------------------------------------------------------

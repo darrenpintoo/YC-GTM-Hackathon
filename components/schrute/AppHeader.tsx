@@ -21,9 +21,9 @@ export function AppHeader({ className }: { className?: string }) {
             <Activity className="size-4" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold tracking-tight">Schrute</span>
+            <span className="font-display text-xl">Schrute</span>
             <span className="hidden text-xs text-muted-foreground sm:inline">
-              the buyers already in the building
+              know before you commit
             </span>
           </div>
         </div>

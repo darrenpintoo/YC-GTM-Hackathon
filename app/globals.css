@@ -4,50 +4,56 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Schrute brand theme — dark-first, evidence-backed, blunt.
-  Tokens use oklch; surfaces are near-black with a warm amber accent
-  (the "go book them" energy) and clear semantic colors for verdicts.
+  Schrute brand theme — light editorial.
+  Warm paper background, ink type, a refined serif for display, and a calm
+  sage-green accent. The "outcome wheel" uses an indigo -> violet -> magenta
+  ring palette (known accounts -> event footprint -> ICP match).
 */
 
 :root {
-  --radius: 0.75rem;
+  --radius: 0.9rem;
 
-  --background: oklch(0.16 0.004 285);
-  --foreground: oklch(0.97 0.002 285);
+  --background: oklch(0.985 0.004 95);
+  --foreground: oklch(0.23 0.012 285);
 
-  --card: oklch(0.2 0.005 285);
-  --card-foreground: oklch(0.97 0.002 285);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.23 0.012 285);
 
-  --popover: oklch(0.19 0.005 285);
-  --popover-foreground: oklch(0.97 0.002 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.23 0.012 285);
 
-  --primary: oklch(0.78 0.16 75);
-  --primary-foreground: oklch(0.2 0.03 75);
+  /* Ink primary (black buttons in the reference) */
+  --primary: oklch(0.24 0.012 285);
+  --primary-foreground: oklch(0.985 0.002 95);
 
-  --secondary: oklch(0.27 0.006 285);
-  --secondary-foreground: oklch(0.97 0.002 285);
+  --secondary: oklch(0.955 0.006 95);
+  --secondary-foreground: oklch(0.28 0.012 285);
 
-  --muted: oklch(0.24 0.006 285);
-  --muted-foreground: oklch(0.68 0.01 285);
+  --muted: oklch(0.965 0.005 95);
+  --muted-foreground: oklch(0.52 0.012 285);
 
-  --accent: oklch(0.27 0.006 285);
-  --accent-foreground: oklch(0.97 0.002 285);
+  --accent: oklch(0.95 0.03 150);
+  --accent-foreground: oklch(0.38 0.07 150);
 
-  --destructive: oklch(0.62 0.21 25);
-  --destructive-foreground: oklch(0.98 0.01 25);
+  --destructive: oklch(0.57 0.2 25);
+  --destructive-foreground: oklch(0.99 0.01 25);
 
-  --success: oklch(0.7 0.16 150);
-  --success-foreground: oklch(0.18 0.03 150);
+  /* Sage green — verdicts / confidence / eyebrows */
+  --success: oklch(0.56 0.11 150);
+  --success-foreground: oklch(0.99 0.01 150);
 
-  --warning: oklch(0.78 0.16 75);
-  --warning-foreground: oklch(0.2 0.03 75);
+  --warning: oklch(0.66 0.13 70);
+  --warning-foreground: oklch(0.99 0.01 70);
 
-  --border: oklch(0.28 0.006 285);
-  --input: oklch(0.3 0.006 285);
-  --ring: oklch(0.78 0.16 75);
+  --border: oklch(0.92 0.004 285);
+  --input: oklch(0.9 0.004 285);
+  --ring: oklch(0.56 0.11 150);
 
-  --tier1: oklch(0.7 0.16 150);
-  --tier2: oklch(0.7 0.13 230);
+  /* Outcome-wheel ring palette */
+  --tier1: oklch(0.42 0.11 285); /* known accounts — indigo */
+  --tier2: oklch(0.56 0.16 295); /* event footprint — violet */
+  --icp: oklch(0.62 0.2 350); /* ICP match — magenta */
+  --brand: oklch(0.56 0.11 150); /* sage green */
 }
 
 @theme inline {
@@ -76,6 +82,8 @@
   --color-ring: var(--ring);
   --color-tier1: var(--tier1);
   --color-tier2: var(--tier2);
+  --color-icp: var(--icp);
+  --color-brand: var(--brand);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -83,6 +91,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, "Times New Roman", serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
@@ -98,10 +107,24 @@ body {
 }
 
 @layer utilities {
+  /* Refined serif for display headlines */
+  .font-display {
+    font-family: var(--font-serif);
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+  }
+
   .grid-bg {
     background-image:
-      linear-gradient(to right, oklch(0.22 0.006 285 / 0.6) 1px, transparent 1px),
-      linear-gradient(to bottom, oklch(0.22 0.006 285 / 0.6) 1px, transparent 1px);
+      linear-gradient(to right, oklch(0.55 0.02 285 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.55 0.02 285 / 0.05) 1px, transparent 1px);
     background-size: 44px 44px;
+  }
+
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
   }
 }

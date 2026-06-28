@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
-import { DEMO_SCENARIOS } from "@/lib/data/demoBundle";
+import { DEMO_SCENARIOS, type LikelyAttendee } from "@/lib/data/demoBundle";
 import { useDataMode } from "@/lib/data/DataModeContext";
 import type {
   AccountMatch,
@@ -43,6 +43,7 @@ export type EventBundle = {
   contacts: Contact[];
   outreachDrafts: OutreachDraft[];
   jobs: Job[];
+  attendees: LikelyAttendee[];
 };
 
 export type UseEventBundleResult = {
@@ -114,6 +115,7 @@ export function useEventBundle(): UseEventBundleResult {
         contacts: demo.contacts,
         outreachDrafts: demo.outreachDrafts,
         jobs: demo.jobs,
+        attendees: DEMO_SCENARIOS[scenario].attendees,
       },
       isLoading: false,
       hasResults: demo.accountMatches.length > 0,
@@ -150,6 +152,7 @@ export function useEventBundle(): UseEventBundleResult {
     contacts: demoFallback.contacts,
     outreachDrafts: demoFallback.outreachDrafts,
     jobs: (liveJobs ?? []) as unknown as Job[],
+    attendees: DEMO_SCENARIOS.attend.attendees,
   };
 
   return {
