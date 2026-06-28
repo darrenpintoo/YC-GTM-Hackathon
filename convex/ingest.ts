@@ -188,6 +188,15 @@ export const addGatheredSource = internalMutation({
     category: v.optional(v.string()),
     recurring: v.optional(v.boolean()),
     editionLabel: v.optional(v.string()),
+    discoveryScore: v.optional(v.number()),
+    signalTier: v.optional(
+      v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+    ),
+    scrapeStatus: v.optional(
+      v.union(v.literal("ok"), v.literal("empty"), v.literal("failed")),
+    ),
+    charCount: v.optional(v.number()),
+    scrapedPageId: v.optional(v.id("scrapedPage")),
   },
   returns: v.id("sourceDocument"),
   handler: async (ctx, args) => {
@@ -202,6 +211,11 @@ export const addGatheredSource = internalMutation({
       textContent: args.textContent,
       contentHash: hashContent(args.textContent),
       fetchedAt: Date.now(),
+      discoveryScore: args.discoveryScore,
+      signalTier: args.signalTier,
+      scrapeStatus: args.scrapeStatus,
+      charCount: args.charCount ?? args.textContent.length,
+      scrapedPageId: args.scrapedPageId,
     });
   },
 });
@@ -223,6 +237,15 @@ export const addGatheredSourcesBatch = internalMutation({
         category: v.optional(v.string()),
         recurring: v.optional(v.boolean()),
         editionLabel: v.optional(v.string()),
+        discoveryScore: v.optional(v.number()),
+        signalTier: v.optional(
+          v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+        ),
+        scrapeStatus: v.optional(
+          v.union(v.literal("ok"), v.literal("empty"), v.literal("failed")),
+        ),
+        charCount: v.optional(v.number()),
+        scrapedPageId: v.optional(v.id("scrapedPage")),
       }),
     ),
   },
@@ -242,6 +265,11 @@ export const addGatheredSourcesBatch = internalMutation({
         textContent: src.textContent,
         contentHash: hashContent(src.textContent),
         fetchedAt: now,
+        discoveryScore: src.discoveryScore,
+        signalTier: src.signalTier,
+        scrapeStatus: src.scrapeStatus,
+        charCount: src.charCount ?? src.textContent.length,
+        scrapedPageId: src.scrapedPageId,
       });
       inserted += 1;
     }
@@ -281,7 +309,26 @@ export const listSourcesForExtraction = internalQuery({
       recurring: d.recurring ?? false,
       editionLabel: d.editionLabel ?? null,
       textContent: d.textContent,
+      signalTier: d.signalTier ?? null,
+      scrapeStatus: d.scrapeStatus ?? null,
+      charCount: d.charCount ?? d.textContent.length,
     }));
+  },
+});
+
+/** Revenue profile context for silver filter pass. */
+export const getExtractContext = internalQuery({
+  args: { eventId: v.id("event") },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get("event", args.eventId);
+    if (!event?.revenueProfileId) {
+      return { industries: [] as string[], keywords: [] as string[] };
+    }
+    const profile = await ctx.db.get("revenueProfile", event.revenueProfileId);
+    return {
+      industries: profile?.industries ?? [],
+      keywords: profile?.keywords ?? [],
+    };
   },
 });
 
@@ -461,6 +508,11 @@ export const applyExtraction = internalMutation({
         contactName: v.optional(v.string()),
         contactTitle: v.optional(v.string()),
         contactQuote: v.optional(v.string()),
+        extractionMethod: v.optional(
+          v.union(v.literal("ai"), v.literal("heuristic"), v.literal("hybrid")),
+        ),
+        orgType: v.optional(v.string()),
+        sourceSignalTier: v.optional(v.string()),
       }),
     ),
     facts: v.array(
@@ -486,12 +538,27 @@ export const applyExtraction = internalMutation({
       await ctx.db.delete("eventCompany", row._id);
     }
 
-    // Dedupe by normalized name. Prefer a "confirmed" mention over "recurring",
-    // then the highest-confidence one.
+    // Dedupe by normalized name. Prefer confirmed > recurring, role tier, signal.
     const best = new Map<string, (typeof args.companies)[number]>();
     const rank = (c: (typeof args.companies)[number]) => {
       let score = (c.presence === "recurring" ? 0 : 1) * 10 + c.confidence;
       if (normalizeContactField(c.contactName)) score += 0.5;
+
+      const role = c.role.toLowerCase();
+      if (role === "sponsor") score += 3;
+      else if (role === "speaker") score += 2;
+      else if (role === "exhibitor") score += 1;
+
+      const booth = (c.boothOrSession ?? "").toLowerCase();
+      if (/platinum|gold/.test(booth)) score += 2;
+      else if (/silver/.test(booth)) score += 1;
+
+      if (c.sourceSignalTier === "high") score += 2;
+      else if (c.sourceSignalTier === "medium") score += 1;
+
+      if (c.quote.length > 80) score += 0.3;
+      else if (c.quote.length > 40) score += 0.15;
+
       return score;
     };
     for (const company of args.companies) {
@@ -523,6 +590,9 @@ export const applyExtraction = internalMutation({
         contactName: normalizeContactField(company.contactName),
         contactTitle: normalizeContactField(company.contactTitle),
         contactQuote: normalizeContactField(company.contactQuote),
+        extractionMethod: company.extractionMethod,
+        orgType: company.orgType,
+        sourceSignalTier: company.sourceSignalTier,
         createdAt: now,
       });
       inserted += 1;
@@ -572,6 +642,15 @@ export const listSourceDocuments = query({
       textContent: v.string(),
       contentHash: v.string(),
       fetchedAt: v.number(),
+      discoveryScore: v.optional(v.number()),
+      signalTier: v.optional(
+        v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+      ),
+      scrapeStatus: v.optional(
+        v.union(v.literal("ok"), v.literal("empty"), v.literal("failed")),
+      ),
+      charCount: v.optional(v.number()),
+      scrapedPageId: v.optional(v.id("scrapedPage")),
     }),
   ),
   handler: async (ctx, args) => {
@@ -609,6 +688,11 @@ export const listEventCompanies = query({
       contactName: v.optional(v.string()),
       contactTitle: v.optional(v.string()),
       contactQuote: v.optional(v.string()),
+      extractionMethod: v.optional(
+        v.union(v.literal("ai"), v.literal("heuristic"), v.literal("hybrid")),
+      ),
+      orgType: v.optional(v.string()),
+      sourceSignalTier: v.optional(v.string()),
       createdAt: v.number(),
     }),
   ),

@@ -1,18 +1,17 @@
 "use client";
 
-import { BadgeCheck, Building2, ChevronRight, MapPin, RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
+import { Building2, RotateCcw } from "lucide-react";
 
-import {
-  EmptyState,
-  EvidenceChip,
-  PresenceBadge,
-  TierBadge,
-} from "@/components/schrute/atoms";
+import { EmptyState, TierBadge } from "@/components/schrute/atoms";
 import { MatchListPanel } from "@/components/schrute/MatchListPanel";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ROLE_LABEL, TIER_META } from "@/lib/labels";
+import { TIER_META } from "@/lib/labels";
 import type { AccountMatch, Contact } from "@/lib/types";
-import { cn, formatCurrency, formatPercent } from "@/lib/utils";
+
+/** Show all inline when count is at or below this; otherwise preview + expand. */
+const SECTION_INLINE_MAX = 6;
+const SECTION_PREVIEW = 6;
 
 type AccountBoardProps = {
   matches: AccountMatch[];
@@ -49,279 +48,97 @@ export function AccountBoard({
     );
   }
 
-  // Confirmed this year vs likely-to-return (named only in a past edition).
   const confirmed = matches.filter((m) => m.presence !== "recurring");
   const recurring = matches.filter((m) => m.presence === "recurring");
   const tier1 = confirmed.filter((m) => m.tier === "tier1_crm");
   const tier2 = confirmed.filter((m) => m.tier === "tier2_icp");
 
-  const contactByMatch = new Map(contacts.map((c) => [c.accountMatchId, c]));
+  const listProps = {
+    contacts,
+    selectedId,
+    onOpenAccount: onSelect,
+    inlineMax: SECTION_INLINE_MAX,
+    previewCount: SECTION_PREVIEW,
+  };
 
   return (
-    <div className="space-y-8">
+    <div className="min-w-0 space-y-8">
       {tier1.length > 0 ? (
-        <TierGroup
-          tier="tier1_crm"
+        <MatchSection
+          badge={<TierBadge tier="tier1_crm" />}
           count={tier1.length}
+          blurb={TIER_META.tier1_crm.blurb}
           matches={tier1}
-          contactByMatch={contactByMatch}
-          selectedId={selectedId}
-          onSelect={onSelect}
+          {...listProps}
         />
       ) : null}
       {tier2.length > 0 ? (
-        tier2.length > 6 ? (
-          <IcpTierSection
-            count={tier2.length}
-            matches={tier2}
-            contacts={contacts}
-            onSelect={onSelect}
-          />
-        ) : (
-          <TierGroup
-            tier="tier2_icp"
-            count={tier2.length}
-            matches={tier2}
-            contactByMatch={contactByMatch}
-            selectedId={selectedId}
-            onSelect={onSelect}
-          />
-        )
+        <MatchSection
+          badge={<TierBadge tier="tier2_icp" />}
+          count={tier2.length}
+          blurb={TIER_META.tier2_icp.blurb}
+          matches={tier2}
+          {...listProps}
+        />
       ) : null}
       {recurring.length > 0 ? (
-        <RecurringGroup
+        <MatchSection
+          badge={
+            <span className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
+              <RotateCcw className="size-3" />
+              Likely to return
+            </span>
+          }
           count={recurring.length}
+          blurb="Named only at past editions — upside, not counted in break-even."
           matches={recurring}
-          contactByMatch={contactByMatch}
-          selectedId={selectedId}
-          onSelect={onSelect}
+          {...listProps}
         />
       ) : null}
     </div>
   );
 }
 
-function IcpTierSection({
+function MatchSection({
+  badge,
   count,
+  blurb,
   matches,
   contacts,
-  onSelect,
+  selectedId,
+  onOpenAccount,
+  inlineMax,
+  previewCount,
 }: {
+  badge: ReactNode;
   count: number;
+  blurb: string;
   matches: AccountMatch[];
   contacts: Contact[];
-  onSelect: (match: AccountMatch) => void;
+  selectedId?: string | null;
+  onOpenAccount: (match: AccountMatch) => void;
+  inlineMax: number;
+  previewCount: number;
 }) {
   return (
-    <section>
-      <div className="mb-3 flex items-baseline justify-between">
-        <div className="flex items-center gap-2">
-          <TierBadge tier="tier2_icp" />
+    <section className="min-w-0">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {badge}
           <span className="text-sm font-medium">
             {count} {count === 1 ? "account" : "accounts"}
           </span>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {TIER_META.tier2_icp.blurb}
-        </span>
+        <span className="text-xs text-muted-foreground">{blurb}</span>
       </div>
       <MatchListPanel
         matches={matches}
         contacts={contacts}
-        onOpenAccount={onSelect}
-        previewCount={6}
-        inlineMax={6}
+        selectedId={selectedId}
+        onOpenAccount={onOpenAccount}
+        inlineMax={inlineMax}
+        previewCount={previewCount}
       />
     </section>
-  );
-}
-
-function RecurringGroup({
-  count,
-  matches,
-  contactByMatch,
-  selectedId,
-  onSelect,
-}: {
-  count: number;
-  matches: AccountMatch[];
-  contactByMatch: Map<string, Contact>;
-  selectedId?: string | null;
-  onSelect: (match: AccountMatch) => void;
-}) {
-  return (
-    <section>
-      <div className="mb-3 flex items-baseline justify-between">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
-            <RotateCcw className="size-3" />
-            Likely to return
-          </span>
-          <span className="text-sm font-medium">
-            {count} {count === 1 ? "account" : "accounts"}
-          </span>
-        </div>
-        <span className="text-xs text-muted-foreground">
-          Named only at past editions — upside, not counted in break-even.
-        </span>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {matches.map((match, i) => (
-          <AccountCard
-            key={match._id}
-            match={match}
-            index={i}
-            contact={contactByMatch.get(match._id)}
-            selected={selectedId === match._id}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function TierGroup({
-  tier,
-  count,
-  matches,
-  contactByMatch,
-  selectedId,
-  onSelect,
-}: {
-  tier: AccountMatch["tier"];
-  count: number;
-  matches: AccountMatch[];
-  contactByMatch: Map<string, Contact>;
-  selectedId?: string | null;
-  onSelect: (match: AccountMatch) => void;
-}) {
-  return (
-    <section>
-      <div className="mb-3 flex items-baseline justify-between">
-        <div className="flex items-center gap-2">
-          <TierBadge tier={tier} />
-          <span className="text-sm font-medium">
-            {count} {count === 1 ? "account" : "accounts"}
-          </span>
-        </div>
-        <span className="text-xs text-muted-foreground">
-          {TIER_META[tier].blurb}
-        </span>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {matches.map((match, i) => (
-          <AccountCard
-            key={match._id}
-            match={match}
-            index={i}
-            contact={contactByMatch.get(match._id)}
-            selected={selectedId === match._id}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AccountCard({
-  match,
-  index,
-  contact,
-  selected,
-  onSelect,
-}: {
-  match: AccountMatch;
-  index: number;
-  contact?: Contact;
-  selected: boolean;
-  onSelect: (match: AccountMatch) => void;
-}) {
-  return (
-    // Not a <button>: it contains interactive evidence chips (also buttons),
-    // and nested buttons are invalid HTML. Use a clickable div with a11y.
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelect(match)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect(match);
-        }
-      }}
-      style={{ animationDelay: `${Math.min(index, 12) * 45}ms` }}
-      className={cn(
-        "group flex w-full animate-in cursor-pointer flex-col gap-3 rounded-xl border bg-card p-4 text-left fade-in slide-in-from-bottom-2 outline-none transition-all duration-500 fill-mode-backwards hover:border-primary/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/60",
-        selected ? "border-primary ring-1 ring-primary/40" : "border-border",
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {match.rank ? (
-              <span className="text-xs font-semibold tabular-nums text-muted-foreground">
-                #{match.rank}
-              </span>
-            ) : null}
-            <h3 className="truncate font-semibold leading-tight">
-              {match.companyName}
-            </h3>
-          </div>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <MapPin className="size-3" />
-            {ROLE_LABEL[match.role]}
-            {match.boothOrSession ? ` · ${match.boothOrSession}` : ""}
-          </p>
-          {match.contactName ? (
-            <p className="mt-1 text-xs text-foreground/80">
-              {match.contactTitle ? `${match.contactTitle}: ` : ""}
-              <span className="font-medium">{match.contactName}</span>
-            </p>
-          ) : null}
-          {match.presence === "recurring" ? (
-            <div className="mt-2">
-              <PresenceBadge
-                presence={match.presence}
-                editionLabel={match.editionLabel}
-              />
-            </div>
-          ) : null}
-        </div>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <ScorePill label="fit" value={match.fitScore} />
-        <ScorePill label="conf" value={match.confidence} />
-        {match.matchedOppValue ? (
-          <span className="ml-auto rounded-md bg-success/15 px-2 py-0.5 font-semibold text-success">
-            {formatCurrency(match.matchedOppValue, { compact: true })} open
-          </span>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {match.evidence.slice(0, 2).map((ev, i) => (
-          <EvidenceChip key={i} evidence={ev} />
-        ))}
-        {contact ? (
-          <span className="inline-flex items-center gap-1 rounded-md bg-tier1/15 px-2 py-0.5 text-[11px] font-medium text-tier1">
-            <BadgeCheck className="size-3" />
-            contact ready
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function ScorePill({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background/40 px-2 py-0.5">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-semibold tabular-nums">{formatPercent(value)}</span>
-    </span>
   );
 }

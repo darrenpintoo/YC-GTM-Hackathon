@@ -1,63 +1,51 @@
+import { resolveEventSourceTextCached } from "./lib/fetchSourceCached";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
-  batchScrape,
   hasFirecrawl,
   mapSite,
+  searchEventSource,
   searchUrls,
   type MappedLink,
 } from "./lib/firecrawl";
-import { resolveEventSourceText } from "./lib/fetchSource";
+import { scrapeStatusFromMarkdown } from "./lib/scrapeCache";
 import { callOpenAiJson, callOpenAiWebSearch } from "./lib/openai";
+import {
+  categorize,
+  dedupeCandidates,
+  hostOf,
+  normalizeUrl,
+  rankCandidates,
+  rankLinks,
+  selectCandidates,
+  type RankedCandidate,
+  type SignalTier,
+} from "./lib/sourceRank";
 import {
   eventMetaSchema,
   sourceDiscoverySchema,
+  sourceTriageSchema,
   type EventMetaOutput,
   type SourceDiscoveryOutput,
+  type SourceTriageOutput,
 } from "../lib/aiSchemas";
 
-const MAX_SOURCES = 50;
-const MAX_RECURRING_SHARE = 0.4; // keep current-year sources dominant
 const THIN_CORPUS_CHARS = 1500;
-
-// Keywords that signal a page likely names companies/people at the event.
-const RELEVANCE_KEYWORDS = [
-  "sponsor",
-  "exhibit",
-  "partner",
-  "supporter",
-  "program",
-  "speaker",
-  "keynote",
-  "plenary",
-  "organizer",
-  "organiser",
-  "committee",
-  "attend",
-  "participant",
-  "floorplan",
-  "floor-plan",
-];
-
-type Candidate = MappedLink & {
-  category: string;
-  recurring: boolean;
-  editionLabel?: string;
-};
+const TRIAGE_TOP_N = 80;
 
 type GatherResult = {
   sourceCount: number;
   thin: boolean;
 };
 
+type RawCandidate = Omit<RankedCandidate, "discoveryScore">;
+
 /**
  * Deep-research gathering phase. Discovers many candidate pages (site map +
- * web search), scrapes the most relevant ones, persists each as a source
- * document, and extracts the real event metadata. Streams progress on the
- * "ingest" (Gather sources) job. Always leaves at least one source so the rest
- * of the pipeline can proceed.
+ * web search), scores and triages them, scrapes high-signal pages (with global
+ * cache), persists each as a source document, and extracts event metadata.
  */
 export const gather = internalAction({
   args: {
@@ -76,50 +64,72 @@ export const gather = internalAction({
       progress: 8,
     });
 
-    const discovered = await discoverUrls(args.eventName, args.eventSource);
-    const candidates = selectCandidates(discovered);
+    const seedTrim = args.eventSource.trim();
+    const seedIsUrl = /^https?:\/\//i.test(seedTrim);
+    const seedHost = seedIsUrl ? hostOf(seedTrim) : undefined;
+
+    const raw = await discoverUrls(ctx, args.eventName, args.eventSource);
+    const deduped = dedupeCandidates(raw, extractYear(args.eventName) ?? undefined);
+    let ranked = rankCandidates(deduped, {
+      seedHost,
+      eventYear: extractYear(args.eventName) ?? undefined,
+    });
+
+    ranked = await triageCandidates(ranked, args.eventName);
+
+    const candidates = selectCandidates(ranked);
+    const highSignal = candidates.filter(
+      (c) => c.signalTier === "high" || c.signalTier === "medium",
+    ).length;
 
     if (candidates.length > 0) {
       const recurringCount = candidates.filter((c) => c.recurring).length;
       await ctx.runMutation(internal.ingest.updateGatherProgress, {
         eventId: args.eventId,
-        message: `Found ${discovered.length} pages (${recurringCount} from past editions) · scraping ${candidates.length}…`,
+        message: `Triage: ${highSignal} high-signal URLs · scraping ${candidates.length} (${recurringCount} past editions)…`,
         progress: 25,
       });
     }
 
-    const urls = candidates.map((c) => c.url);
-    const metaByUrl = new Map(
-      candidates.map((c) => [normalizeUrl(c.url), c]),
-    );
-
-    // Scrape + persist in waves so Firecrawl runs in parallel per wave and the
-    // UI gets progress during the long scrape (not one silent block at the end).
     const SCRAPE_WAVE = 15;
     let saved = 0;
     let totalChars = 0;
-    for (let i = 0; i < urls.length; i += SCRAPE_WAVE) {
-      const waveUrls = urls.slice(i, i + SCRAPE_WAVE);
-      const waveEnd = Math.min(i + SCRAPE_WAVE, urls.length);
+    let cacheHits = 0;
+
+    for (let i = 0; i < candidates.length; i += SCRAPE_WAVE) {
+      const wave = candidates.slice(i, i + SCRAPE_WAVE);
+      const waveEnd = Math.min(i + SCRAPE_WAVE, candidates.length);
+
       await ctx.runMutation(internal.ingest.updateGatherProgress, {
         eventId: args.eventId,
-        message: `Scraping sources ${i + 1}–${waveEnd} of ${urls.length}…`,
-        progress: 25 + Math.round((i / Math.max(urls.length, 1)) * 55),
+        message: `Gathering sources ${i + 1}–${waveEnd} of ${candidates.length}…`,
+        progress: 25 + Math.round((i / Math.max(candidates.length, 1)) * 55),
       });
 
-      const docs = waveUrls.length > 0 ? await batchScrape(waveUrls) : [];
-      const toSave = docs.map((doc) => {
-        const meta = metaByUrl.get(normalizeUrl(doc.url));
-        return {
-          textContent: doc.markdown,
-          kind: "url" as const,
-          url: doc.url,
-          title: titleFromUrl(doc.url),
-          category: meta?.category ?? categorize(doc.url, doc.markdown),
-          recurring: meta?.recurring ?? false,
-          editionLabel: meta?.editionLabel,
-        };
+      const batch = await ctx.runAction(internal.scrapeCache.getOrScrapeBatch, {
+        urls: wave.map((c) => c.url),
+        categories: wave.map((c) => c.category),
       });
+      cacheHits += batch.cacheHits;
+
+      const pageByNorm = new Map(
+        batch.pages.map((p) => [normalizeUrl(p.url), p]),
+      );
+
+      const toSave = wave
+        .map((meta) => {
+          const page = pageByNorm.get(normalizeUrl(meta.url));
+          if (!page || page.scrapeStatus !== "ok" || page.markdown.length < 200) {
+            return null;
+          }
+          return buildSourceRow(
+            meta,
+            page.markdown,
+            page.scrapeStatus,
+            page.scrapedPageId,
+          );
+        })
+        .filter((row): row is NonNullable<typeof row> => row != null);
 
       if (toSave.length > 0) {
         const n = await ctx.runMutation(internal.ingest.addGatheredSourcesBatch, {
@@ -128,17 +138,17 @@ export const gather = internalAction({
         });
         saved += n;
         totalChars += toSave.reduce((sum, s) => sum + s.textContent.length, 0);
-        await ctx.runMutation(internal.ingest.updateGatherProgress, {
-          eventId: args.eventId,
-          message: `Gathered ${saved}/${urls.length} sources`,
-          progress: 25 + Math.round((waveEnd / Math.max(urls.length, 1)) * 60),
-        });
       }
+
+      await ctx.runMutation(internal.ingest.updateGatherProgress, {
+        eventId: args.eventId,
+        message: `Gathered ${saved}/${candidates.length} sources${cacheHits > 0 ? ` (${cacheHits} from cache)` : ""}`,
+        progress: 25 + Math.round((waveEnd / Math.max(candidates.length, 1)) * 60),
+      });
     }
 
-    // Fallback: nothing usable gathered — resolve the raw source (or snapshot).
     if (saved === 0) {
-      const resolved = await resolveEventSourceText(args.eventSource);
+      const resolved = await resolveEventSourceTextCached(ctx, args.eventSource);
       await ctx.runMutation(internal.ingest.addGatheredSource, {
         eventId: args.eventId,
         textContent: resolved.text,
@@ -149,14 +159,15 @@ export const gather = internalAction({
             ? "Cached snapshot"
             : titleFromUrl(resolved.url ?? ""),
         category: resolved.kind === "snapshot" ? "other" : "event",
+        scrapeStatus: resolved.text.length >= 200 ? "ok" : "empty",
+        charCount: resolved.text.length,
+        scrapedPageId: resolved.scrapedPageId,
       });
       saved = 1;
       totalChars = resolved.text.length;
     }
 
     const thin = totalChars < THIN_CORPUS_CHARS;
-
-    // Pull real event metadata (dates/location) from the gathered corpus.
     await extractMetadata(ctx, args.eventId, args.eventName);
 
     await ctx.runMutation(internal.ingest.updateGatherProgress, {
@@ -172,12 +183,90 @@ export const gather = internalAction({
   },
 });
 
+function buildSourceRow(
+  meta: RankedCandidate,
+  markdown: string,
+  scrapeStatus: "ok" | "empty" | "failed",
+  scrapedPageId: Id<"scrapedPage">,
+) {
+  return {
+    textContent: markdown,
+    kind: "url" as const,
+    url: meta.url,
+    title: meta.title ?? titleFromUrl(meta.url),
+    category: meta.category,
+    recurring: meta.recurring,
+    editionLabel: meta.editionLabel,
+    discoveryScore: meta.discoveryScore,
+    signalTier: meta.signalTier,
+    scrapeStatus,
+    charCount: markdown.length,
+    scrapedPageId,
+  };
+}
+
+async function triageCandidates(
+  ranked: RankedCandidate[],
+  eventName: string,
+): Promise<RankedCandidate[]> {
+  const top = ranked.slice(0, TRIAGE_TOP_N);
+  if (top.length === 0) return ranked;
+
+  try {
+    const payload = top.map((c, index) => ({
+      index,
+      url: c.url,
+      title: c.title ?? "",
+      category: c.category,
+      recurring: c.recurring,
+    }));
+
+    const ai = await callOpenAiWebSearch<SourceTriageOutput>({
+      instructions:
+        "Classify each URL for a B2B event research pipeline. Rate signal strength for finding company names (sponsors, exhibitors, speakers). Mark registration/travel/hotel/about pages as skip. Return one row per input index.",
+      input: `Event: ${eventName}\n\nURLs to triage (JSON):\n${JSON.stringify(payload)}`,
+      responseSchema: sourceTriageSchema,
+    });
+
+    const triageByIndex = new Map(
+      (ai?.urls ?? []).map((u) => [u.index, u]),
+    );
+
+    const updatedTop = top.map((c, index) => {
+      const t = triageByIndex.get(index);
+      if (!t) return c;
+      return {
+        ...c,
+        signalTier:
+          t.signal === "skip" ? c.signalTier : (t.signal as SignalTier),
+        triageSkip: t.signal === "skip",
+        category:
+          t.expectedContent === "sponsor_list"
+            ? "sponsors"
+            : t.expectedContent === "exhibitor_list"
+              ? "exhibitors"
+              : t.expectedContent === "speaker_list"
+                ? "speakers"
+                : t.expectedContent === "agenda"
+                  ? "program"
+                  : c.category,
+      };
+    });
+
+    return [...updatedTop, ...ranked.slice(TRIAGE_TOP_N)];
+  } catch (err) {
+    console.warn("URL triage failed, using keyword scores only", err);
+    return ranked;
+  }
+}
+
 async function discoverUrls(
+  ctx: ActionCtx,
   eventName: string,
   eventSource: string,
-): Promise<Candidate[]> {
+): Promise<RawCandidate[]> {
   const seen = new Set<string>();
-  const out: Candidate[] = [];
+  const out: RawCandidate[] = [];
   const eventYear = extractYear(eventName) ?? new Date().getFullYear();
   const baseName = stripYear(eventName);
   const pastYears = [eventYear - 1, eventYear - 2, eventYear - 3];
@@ -192,7 +281,6 @@ async function discoverUrls(
     if (seen.has(norm)) return;
     seen.add(norm);
 
-    // Classify recurring by explicit flag or a past-year token in url/title.
     const yr = extractYear(`${link.url} ${link.title ?? ""}`);
     const yearRecurring = yr != null && yr < eventYear;
     const recurring = Boolean(opts?.recurring) || yearRecurring;
@@ -200,18 +288,23 @@ async function discoverUrls(
       opts?.editionLabel ??
       (yearRecurring ? `${baseName} ${yr}` : undefined);
 
-    out.push({ ...link, category, recurring, editionLabel });
+    out.push({
+      url: link.url,
+      title: link.title,
+      description: link.description,
+      category,
+      recurring,
+      editionLabel,
+    });
   };
 
   const seedTrim = eventSource.trim();
   const seedIsUrl = /^https?:\/\//i.test(seedTrim);
 
-  // 1. Seed URL first (always scrape what the user explicitly gave us).
   if (seedIsUrl) {
     add({ url: seedTrim }, "event", { recurring: false });
   }
 
-  // 2. Run all discovery in parallel.
   const fc = hasFirecrawl();
   const currentQueries = [
     `${eventName} sponsors`,
@@ -220,6 +313,9 @@ async function discoverUrls(
     `${eventName} sponsors and partners`,
     `${eventName} keynote speakers`,
     `${eventName} floor plan exhibitors`,
+    `${eventName} "gold sponsor" OR "platinum sponsor"`,
+    `${eventName} exhibitor list filetype:pdf`,
+    `${eventName} site:luma.co OR site:partiful.com OR site:eventbrite.com`,
   ];
   const pastQueries = pastYears.flatMap((y) => [
     `${baseName} ${y} exhibitors`,
@@ -228,12 +324,25 @@ async function discoverUrls(
 
   const [
     seedLinks,
+    focusedSponsorLinks,
+    focusedExhibitorLinks,
+    focusedSpeakerLinks,
     currentHits,
     pastHits,
+    searchScrapeHits,
     aiNow,
     aiPast,
   ] = await Promise.all([
     fc && seedIsUrl ? mapSite(seedTrim, { limit: 300 }) : Promise.resolve([]),
+    fc && seedIsUrl
+      ? mapSite(seedTrim, { search: "sponsor partner", limit: 60 })
+      : Promise.resolve([]),
+    fc && seedIsUrl
+      ? mapSite(seedTrim, { search: "exhibitor booth", limit: 80 })
+      : Promise.resolve([]),
+    fc && seedIsUrl
+      ? mapSite(seedTrim, { search: "speaker keynote program", limit: 50 })
+      : Promise.resolve([]),
     fc
       ? Promise.all(currentQueries.map((q) => searchUrls(q, 4))).then((r) =>
           r.flat(),
@@ -243,6 +352,13 @@ async function discoverUrls(
       ? Promise.all(pastQueries.map((q) => searchUrls(q, 3))).then((r) =>
           r.flat(),
         )
+      : Promise.resolve([]),
+    fc
+      ? Promise.all([
+          searchEventSource(`${eventName} sponsors exhibitors`),
+          searchEventSource(`${eventName} "gold sponsor" OR "platinum sponsor"`),
+          searchEventSource(`${eventName} keynote speakers list`),
+        ])
       : Promise.resolve([]),
     callOpenAiWebSearch<SourceDiscoveryOutput>({
       instructions:
@@ -258,17 +374,50 @@ async function discoverUrls(
     }),
   ]);
 
-  // 2a. Seed-site map links (current edition).
+  // Seed scrapedPage cache from search-and-scrape hits (avoid double scrape in gather).
+  const searchPages = searchScrapeHits.flatMap((h) => {
+    if (!h?.url || !h.markdown || h.markdown.length < 200) return [];
+    const markdown = h.markdown;
+    return [
+      {
+        url: h.url,
+        markdown: markdown.slice(0, 50_000),
+        category: categorize(h.url, h.title ?? ""),
+        scrapeStatus: scrapeStatusFromMarkdown(markdown),
+      },
+    ];
+  });
+
+  if (searchPages.length > 0) {
+    await ctx.runMutation(internal.scrapeCache.upsertBatch, {
+      pages: searchPages,
+    });
+  }
+
   for (const l of rankLinks(seedLinks).slice(0, 16)) {
     add(l, categorize(l.url, l.title ?? ""));
   }
-  // 2b. Current-edition search hits.
+  for (const l of rankLinks(focusedSponsorLinks).slice(0, 20)) {
+    add(l, "sponsors");
+  }
+  for (const l of rankLinks(focusedExhibitorLinks).slice(0, 24)) {
+    add(l, "exhibitors");
+  }
+  for (const l of rankLinks(focusedSpeakerLinks).slice(0, 16)) {
+    add(l, "speakers");
+  }
   for (const h of currentHits) add(h, categorize(h.url, h.title ?? ""));
-  // 2c. Past-edition search hits (explicitly recurring).
   for (const h of pastHits) {
     add(h, "past_edition", { recurring: true });
   }
-  // 2d. OpenAI current + past.
+  for (const hit of searchScrapeHits) {
+    if (hit?.url) {
+      add(
+        { url: hit.url, title: hit.title },
+        categorize(hit.url, hit.title ?? ""),
+      );
+    }
+  }
   for (const u of aiNow?.urls ?? []) {
     if (u.url) add({ url: u.url, title: u.title }, u.category ?? "news");
   }
@@ -277,7 +426,6 @@ async function discoverUrls(
       add({ url: u.url, title: u.title }, "past_edition", { recurring: true });
   }
 
-  // 3. Second pass: map discovered past-edition root domains (parallel).
   if (fc) {
     const seedHost = seedIsUrl ? hostOf(seedTrim) : "";
     const pastHosts = Array.from(
@@ -302,25 +450,9 @@ async function discoverUrls(
   return out;
 }
 
-/**
- * Cap the candidate set at MAX_SOURCES, keeping current-year sources dominant
- * (recurring limited to MAX_RECURRING_SHARE). Confirmed first, then recurring.
- */
-function selectCandidates(candidates: Candidate[]): Candidate[] {
-  const confirmed = candidates.filter((c) => !c.recurring);
-  const recurring = candidates.filter((c) => c.recurring);
-
-  const maxRecurring = Math.floor(MAX_SOURCES * MAX_RECURRING_SHARE);
-  const recurringTake = recurring.slice(0, maxRecurring);
-  const confirmedTake = confirmed.slice(0, MAX_SOURCES - recurringTake.length);
-
-  return [...confirmedTake, ...recurringTake];
-}
-
 function extractYear(text: string): number | null {
   const matches = text.match(/\b(20\d{2})\b/g);
   if (!matches) return null;
-  // Prefer the most recent plausible year mentioned.
   const years = matches
     .map((m) => Number(m))
     .filter((y) => y >= 2000 && y <= new Date().getFullYear() + 1);
@@ -329,49 +461,6 @@ function extractYear(text: string): number | null {
 
 function stripYear(eventName: string): string {
   return eventName.replace(/\b20\d{2}\b/g, "").replace(/\s{2,}/g, " ").trim();
-}
-
-function rankLinks(links: MappedLink[]): MappedLink[] {
-  return links
-    .map((l) => ({ link: l, score: relevanceScore(l) }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.link);
-}
-
-function relevanceScore(link: MappedLink): number {
-  const hay = `${link.url} ${link.title ?? ""} ${link.description ?? ""}`.toLowerCase();
-  let score = 0;
-  for (const kw of RELEVANCE_KEYWORDS) {
-    if (hay.includes(kw)) score += 1;
-  }
-  return score;
-}
-
-function categorize(url: string, hint: string): string {
-  const hay = `${url} ${hint}`.toLowerCase();
-  if (hay.includes("sponsor") || hay.includes("supporter")) return "sponsors";
-  if (hay.includes("exhibit")) return "exhibitors";
-  if (
-    hay.includes("speaker") ||
-    hay.includes("keynote") ||
-    hay.includes("plenary")
-  )
-    return "speakers";
-  if (
-    hay.includes("program") ||
-    hay.includes("agenda") ||
-    hay.includes("schedule")
-  )
-    return "program";
-  if (
-    hay.includes("news") ||
-    hay.includes("press") ||
-    hay.includes("blog") ||
-    hay.includes("announce")
-  )
-    return "news";
-  return "event";
 }
 
 async function extractMetadata(
@@ -413,23 +502,6 @@ function isoOrUndefined(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : undefined;
-}
-
-function normalizeUrl(url: string): string {
-  return url
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/^www\./, "")
-    .replace(/\/+$/, "");
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url.slice(0, 40);
-  }
 }
 
 function titleFromUrl(url: string): string {

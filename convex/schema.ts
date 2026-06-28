@@ -78,9 +78,36 @@ export default defineSchema({
     contentHash: v.string(),
     snapshotStorageId: v.optional(v.id("_storage")),
     fetchedAt: v.number(),
+    // Bronze metadata
+    discoveryScore: v.optional(v.number()),
+    signalTier: v.optional(
+      v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+    ),
+    scrapeStatus: v.optional(
+      v.union(v.literal("ok"), v.literal("empty"), v.literal("failed")),
+    ),
+    charCount: v.optional(v.number()),
+    scrapedPageId: v.optional(v.id("scrapedPage")),
   })
     .index("by_event", ["eventId"])
     .index("by_hash", ["contentHash"]),
+
+  scrapedPage: defineTable({
+    normalizedUrl: v.string(),
+    url: v.string(),
+    markdown: v.string(),
+    contentHash: v.string(),
+    charCount: v.number(),
+    scrapeStatus: v.union(
+      v.literal("ok"),
+      v.literal("empty"),
+      v.literal("failed"),
+    ),
+    category: v.optional(v.string()),
+    fetchedAt: v.number(),
+    hitCount: v.number(),
+    failCount: v.number(),
+  }).index("by_normalized_url", ["normalizedUrl"]),
 
   eventFact: defineTable({
     eventId: v.id("event"),
@@ -122,6 +149,12 @@ export default defineSchema({
     contactName: v.optional(v.string()),
     contactTitle: v.optional(v.string()),
     contactQuote: v.optional(v.string()),
+    // Silver metadata
+    extractionMethod: v.optional(
+      v.union(v.literal("ai"), v.literal("heuristic"), v.literal("hybrid")),
+    ),
+    orgType: v.optional(v.string()),
+    sourceSignalTier: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_event", ["eventId"])

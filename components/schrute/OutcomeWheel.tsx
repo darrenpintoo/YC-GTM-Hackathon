@@ -524,14 +524,14 @@ function SignalPanel({
   };
 
   return (
-    <div className="mt-6 animate-in fade-in-50 slide-in-from-top-2 rounded-xl border border-border bg-secondary/40 p-4 duration-300 motion-reduce:animate-none sm:p-5">
+    <div className="mt-6 max-h-[min(32rem,60vh)] animate-in fade-in-50 slide-in-from-top-2 overflow-y-auto overscroll-contain rounded-xl border border-border bg-secondary/40 p-4 duration-300 motion-reduce:animate-none sm:p-5">
       <div className="mb-3 flex items-center gap-2">
         {meta.icon}
         <h3 className="text-sm font-semibold">{meta.title}</h3>
       </div>
 
       {expanded === "people" ? (
-        <AttendeeList attendees={attendees} />
+        <AttendeeList attendees={attendees} eventName={event.name} compact />
       ) : expanded === "drafts" ? (
         <DraftSignals drafts={outreachDrafts} contacts={contacts} />
       ) : expanded === "meetings" ? (

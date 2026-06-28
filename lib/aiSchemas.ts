@@ -590,6 +590,103 @@ export type OutreachDraftOutput = {
   tone: string;
 };
 
+/** Bronze URL triage — classify discovery candidates before scrape. */
+export const sourceTriageSchema = {
+  name: "source_triage",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["urls"],
+    properties: {
+      urls: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "signal", "expectedContent", "reason"],
+          properties: {
+            index: { type: "number" },
+            signal: {
+              type: "string",
+              enum: ["high", "medium", "low", "skip"],
+            },
+            expectedContent: {
+              type: "string",
+              enum: [
+                "sponsor_list",
+                "exhibitor_list",
+                "speaker_list",
+                "agenda",
+                "noise",
+              ],
+            },
+            reason: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type SourceTriageOutput = {
+  urls: Array<{
+    index: number;
+    signal: "high" | "medium" | "low" | "skip";
+    expectedContent: string;
+    reason: string;
+  }>;
+};
+
+/** Silver consolidation filter — drop low-GTM orgs from extracted list. */
+export const companyFilterSchema = {
+  name: "company_filter",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["companies"],
+    properties: {
+      companies: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "keep", "orgType", "gtmRelevance"],
+          properties: {
+            index: { type: "number" },
+            keep: { type: "boolean" },
+            orgType: {
+              type: "string",
+              enum: [
+                "commercial",
+                "academic",
+                "government",
+                "media",
+                "unknown",
+              ],
+            },
+            gtmRelevance: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type CompanyFilterOutput = {
+  companies: Array<{
+    index: number;
+    keep: boolean;
+    orgType: string;
+    gtmRelevance: number;
+  }>;
+};
+
 /** Prompt guardrails shared across AI calls. */
 export const AI_GUARDRAILS = `
 You extract and summarize ONLY from provided source text.

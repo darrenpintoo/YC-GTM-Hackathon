@@ -38,7 +38,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DEMO_SCENARIOS, type DemoScenarioKey } from "@/lib/data/demoBundle";
 import { useDataMode } from "@/lib/data/DataModeContext";
 import { useEventBundle, DEMO_EVENT_SLUG, type EventBundle } from "@/lib/data/useEventBundle";
 import type { ObjectiveKey, ParticipationKey } from "@/lib/objectives";
@@ -214,7 +213,7 @@ export default function Home() {
       <div className="min-h-screen">
         <AppHeader />
 
-        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <main className="mx-auto min-w-0 max-w-7xl px-4 py-8 sm:px-6">
           {error ? (
             <div className="mb-6">
               <FailedState title="Pipeline failed" description={error} />
@@ -299,16 +298,16 @@ function RunningView({
   }, [completedCount]);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {mode === "live" ? (
         <LivePipelineNotice
           detail="Deep research: we map the event site, search the open web for sponsor/exhibitor/speaker pages, scrape the most relevant ones, then extract companies, write the memo, and find attendees. Steps stream below (~45–120s)."
         />
       ) : null}
-      {mode === "live" && bundle && bundle.sourceDocuments.length > 0 ? (
+      {bundle && bundle.sourceDocuments.length > 0 ? (
         <GatheredSourcesLive sources={bundle.sourceDocuments} />
       ) : null}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
       <div>
         {bundle ? (
           <RevenueProfilePanel
@@ -457,7 +456,7 @@ function SourcesPanel({
         Every page Schrute read while researching this event. Companies and
         attendees are cited back to these sources.
       </p>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         {sources.map((s) => (
           <Card key={s._id}>
             <CardContent className="space-y-2 p-4">
@@ -534,20 +533,17 @@ function ResultsView({
     (corpusChars < 1500 || (matches.length === 0 && onlyFallbackSources));
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {mode === "live" && isThinCorpus ? <ThinCorpusNotice /> : null}
       {mode === "live" && bundle.usesMockEnrichment ? (
         <MockEnrichmentNotice />
       ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <EventTitle event={event} />
-        <div className="flex items-center gap-2">
-          <ScenarioSwitcher />
-          <Button variant="outline" size="sm" onClick={onReset}>
-            <RotateCcw className="size-4" />
-            New run
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={onReset}>
+          <RotateCcw className="size-4" />
+          New run
+        </Button>
       </div>
 
       <Tabs defaultValue="event" className="gap-6">
@@ -605,8 +601,8 @@ function ResultsView({
             outreachDrafts={outreachDrafts}
           />
 
-          <div id="accounts-board" className="grid gap-6 lg:grid-cols-3 scroll-mt-24">
-            <div className="lg:col-span-2">
+          <div id="accounts-board" className="grid min-w-0 gap-6 scroll-mt-24 lg:grid-cols-3">
+            <div className="min-w-0 lg:col-span-2">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Your accounts on the floor
               </h2>
@@ -618,7 +614,7 @@ function ResultsView({
               />
             </div>
 
-            <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
+            <div className="min-w-0 space-y-6 lg:sticky lg:top-20 lg:self-start">
               <VerdictMemo score={score} memo={memo} />
               <RevenueProfilePanel
                 profile={bundle.revenueProfile}
@@ -642,7 +638,7 @@ function ResultsView({
                 : ""}
             </p>
           </div>
-          <AttendeeList attendees={attendees} />
+          <AttendeeList attendees={attendees} eventName={event.name} />
         </TabsContent>
 
         <TabsContent
@@ -665,33 +661,6 @@ function ResultsView({
           <PortfolioPlanner />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function ScenarioSwitcher() {
-  const { mode, scenario, setScenario } = useDataMode();
-  if (mode !== "mock") return null;
-
-  const keys = Object.keys(DEMO_SCENARIOS) as DemoScenarioKey[];
-
-  return (
-    <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5 text-xs">
-      {keys.map((k) => (
-        <button
-          key={k}
-          type="button"
-          onClick={() => setScenario(k)}
-          className={cn(
-            "rounded-md px-2.5 py-1 font-medium transition-colors",
-            scenario === k
-              ? "bg-secondary text-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {k === "attend" ? "Attend demo" : "Skip demo"}
-        </button>
-      ))}
     </div>
   );
 }

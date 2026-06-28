@@ -1,5 +1,6 @@
 import { DEMO_EXHIBITOR_SNAPSHOT } from "./demoSeed";
 import { hasFirecrawl, scrapeMarkdown, searchEventSource } from "./firecrawl";
+import { plainFetch } from "./plainFetch";
 
 export type ResolvedSource = {
   text: string;
@@ -59,32 +60,4 @@ export async function resolveEventSourceText(
 
   // Short free-text with no URL and no search hit: keep it as pasted context.
   return { text: trimmed.slice(0, MAX_FETCH_CHARS), kind: "paste" };
-}
-
-async function plainFetch(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "SchruteBot/1.0 (event-ingest)",
-        Accept: "text/html,text/plain,*/*",
-      },
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (!response.ok) return null;
-    const raw = await response.text();
-    const text = stripHtml(raw).slice(0, MAX_FETCH_CHARS);
-    return text.length > 200 ? text : null;
-  } catch (err) {
-    console.warn("Plain URL fetch failed", err);
-    return null;
-  }
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }

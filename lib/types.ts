@@ -128,6 +128,11 @@ export type SourceDocument = {
   textContent: string;
   contentHash: string;
   fetchedAt: number;
+  discoveryScore?: number;
+  signalTier?: "high" | "medium" | "low";
+  scrapeStatus?: "ok" | "empty" | "failed";
+  charCount?: number;
+  scrapedPageId?: SchruteId<"scrapedPage">;
 };
 
 export type EventFact = {
@@ -165,6 +170,9 @@ export type EventCompany = {
   contactName?: string;
   contactTitle?: string;
   contactQuote?: string;
+  extractionMethod?: "ai" | "heuristic" | "hybrid";
+  orgType?: string;
+  sourceSignalTier?: string;
   createdAt: number;
 };
 

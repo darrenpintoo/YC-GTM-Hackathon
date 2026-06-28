@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   ArrowUpRight,
   BadgeCheck,
+  ChevronDown,
   Mail,
   MapPin,
   Phone,
@@ -11,10 +12,15 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/schrute/atoms";
 import type { LikelyAttendee } from "@/lib/data/demoBundle";
+import { resolveMatchReason } from "@/lib/attendeeConnection";
 import { cn } from "@/lib/utils";
+
+const INLINE_MAX = 6;
+const PREVIEW_COUNT = 6;
 
 type MatchTag = { label: string; tone: string };
 
@@ -55,7 +61,6 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-// Matched accounts first, then enriched (verified contact), then by name.
 function sortAttendees(attendees: LikelyAttendee[]): LikelyAttendee[] {
   return [...attendees].sort((a, b) => {
     const am = a.matchTier ? 0 : 1;
@@ -70,13 +75,17 @@ function sortAttendees(attendees: LikelyAttendee[]): LikelyAttendee[] {
 
 export function AttendeeList({
   attendees,
+  eventName = "this event",
   className,
   compact,
 }: {
   attendees: LikelyAttendee[];
+  eventName?: string;
   className?: string;
   compact?: boolean;
 }) {
+  const [expanded, setExpanded] = React.useState(false);
+
   if (attendees.length === 0) {
     return (
       <EmptyState
@@ -88,9 +97,18 @@ export function AttendeeList({
   }
 
   const sorted = sortAttendees(attendees);
+  const showInline = compact || attendees.length <= INLINE_MAX;
+  const needsExpand = !showInline && sorted.length > PREVIEW_COUNT;
+  const visibleCount = showInline
+    ? sorted.length
+    : expanded
+      ? sorted.length
+      : Math.min(PREVIEW_COUNT, sorted.length);
+  const visible = sorted.slice(0, visibleCount);
+  const hiddenCount = sorted.length - visible.length;
 
   return (
-    <div className={className}>
+    <div className={cn("min-w-0", className)}>
       {!compact ? (
         <p className="mb-3 flex items-start gap-2 rounded-lg border border-border bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
           <BadgeCheck className="mt-0.5 size-3.5 shrink-0 text-success" />
@@ -102,36 +120,78 @@ export function AttendeeList({
         </p>
       ) : null}
 
-      <div className={cn("grid gap-3", compact ? "" : "sm:grid-cols-2")}>
-        {sorted.map((p) => (
-          <AttendeeCard key={p.id} p={p} />
+      {needsExpand && !expanded ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Showing top {PREVIEW_COUNT} of {sorted.length} people by match priority.
+        </p>
+      ) : null}
+
+      <div
+        className={cn(
+          "grid min-w-0 gap-3",
+          compact ? "" : "sm:grid-cols-2",
+          expanded && needsExpand && "max-h-[min(28rem,55vh)] overflow-y-auto overscroll-contain pr-1",
+        )}
+      >
+        {visible.map((p) => (
+          <AttendeeCard key={p.id} p={p} eventName={eventName} />
         ))}
       </div>
+
+      {needsExpand && hiddenCount > 0 ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-3 w-full text-xs"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show less" : `Show all ${sorted.length} people`}
+          <ChevronDown
+            className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+          />
+        </Button>
+      ) : null}
     </div>
   );
 }
 
-function AttendeeCard({ p }: { p: LikelyAttendee }) {
+function AttendeeCard({
+  p,
+  eventName,
+}: {
+  p: LikelyAttendee;
+  eventName: string;
+}) {
   const tag = matchTag(p);
   const role = p.enrichedTitle || p.title;
   const hasContact = Boolean(p.email || p.phone || p.location);
+  const connection = resolveMatchReason(p.matchReason, {
+    eventName,
+    matchTier: p.matchTier,
+    network: p.network,
+    postQuote: p.postQuote,
+    fullName: p.fullName,
+    title: role,
+    companyName: p.companyName,
+  });
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-foreground/20 hover:shadow-sm">
-      <div className="flex items-start gap-3">
+    <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-foreground/20 hover:shadow-sm">
+      <div className="flex min-w-0 items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
           {initials(p.fullName)}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             {p.profileUrl && p.profileUrl !== "#" ? (
               <a
                 href={p.profileUrl}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="group inline-flex items-center gap-1 truncate text-sm font-semibold hover:underline"
+                className="group inline-flex min-w-0 items-center gap-1 hover:underline"
               >
-                <span className="truncate">{p.fullName}</span>
+                <span className="truncate text-sm font-semibold">{p.fullName}</span>
                 <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
               </a>
             ) : (
@@ -147,17 +207,17 @@ function AttendeeCard({ p }: { p: LikelyAttendee }) {
         </Badge>
       </div>
 
-      {p.matchReason ? (
+      {connection ? (
         <p className="flex items-start gap-1.5 rounded-lg border border-success/20 bg-success/8 px-3 py-2 text-xs leading-relaxed text-foreground/90">
           <Sparkles className="mt-0.5 size-3 shrink-0 text-success" />
-          <span>{p.matchReason}</span>
+          <span>{connection}</span>
         </p>
       ) : null}
 
       {p.postQuote ? (
         <blockquote className="relative rounded-lg bg-secondary/60 px-3 py-2 pl-7 text-xs leading-relaxed text-foreground/90">
           <Quote className="absolute left-2.5 top-2.5 size-3 text-muted-foreground" />
-          {p.postQuote}
+          <span className="line-clamp-4">{p.postQuote}</span>
         </blockquote>
       ) : null}
 
@@ -166,12 +226,12 @@ function AttendeeCard({ p }: { p: LikelyAttendee }) {
           {p.email ? (
             <a
               href={`mailto:${p.email}`}
-              className="inline-flex items-center gap-1 font-medium text-tier1 hover:underline"
+              className="inline-flex max-w-full items-center gap-1 truncate font-medium text-tier1 hover:underline"
             >
-              <Mail className="size-3" />
-              {p.email}
+              <Mail className="size-3 shrink-0" />
+              <span className="truncate">{p.email}</span>
               {p.emailStatus === "valid" ? (
-                <BadgeCheck className="size-3 text-success" />
+                <BadgeCheck className="size-3 shrink-0 text-success" />
               ) : null}
             </a>
           ) : null}

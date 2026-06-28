@@ -16,6 +16,7 @@ import {
   type DecisionMakerSearchOutput,
   type SpeakerExtractionOutput,
 } from "../lib/aiSchemas";
+import { resolveMatchReason } from "./lib/attendeeConnection";
 
 const MAX_FIBER_REVEALS = 12;
 const MAX_FIBER_DECISION_MAKERS = 12;
@@ -99,6 +100,11 @@ export const run = internalAction({
       const byName = new Map<string, DiscoveredAttendee>();
       for (const s of speakers) byName.set(s.fullName.toLowerCase(), s);
       for (const p of posted) byName.set(p.fullName.toLowerCase(), p);
+      for (const s of tier1ContactsFromMatches(inputs)) {
+        if (!byName.has(s.fullName.toLowerCase())) {
+          byName.set(s.fullName.toLowerCase(), s);
+        }
+      }
       const attendees = Array.from(byName.values());
 
       const mapped = attendees.map((a) => {
@@ -107,6 +113,7 @@ export const run = internalAction({
           attendee: a,
           accountMatchId: best?._id,
           matchTier: best?.tier,
+          matchedOppValue: best?.matchedOppValue,
         };
       });
 
@@ -198,6 +205,7 @@ export const run = internalAction({
           const revealed = m.attendee.profileUrl
             ? revealedByUrl.get(m.attendee.profileUrl)
             : undefined;
+          const displayTitle = revealed?.title || m.attendee.title;
           return {
             accountMatchId: m.accountMatchId,
             matchTier: m.matchTier,
@@ -215,7 +223,19 @@ export const run = internalAction({
             phone: revealed?.phone,
             location: revealed?.location,
             enrichedTitle: revealed?.title,
-            matchReason: reasonByIndex.get(i),
+            matchReason: resolveMatchReason(reasonByIndex.get(i), {
+              eventName: inputs.event.name,
+              sellerName: inputs.sellerName,
+              buyerTitles: inputs.buyerTitles,
+              industries: inputs.industries,
+              matchTier: m.matchTier,
+              matchedOppValue: m.matchedOppValue,
+              network: m.attendee.network,
+              postQuote: m.attendee.postQuote,
+              fullName: m.attendee.fullName,
+              title: displayTitle,
+              companyName: m.attendee.companyName,
+            }),
           };
         }),
         contacts: Array.from(contactByMatch.values()),
@@ -256,6 +276,7 @@ type DiscoveredAttendee = {
 
 type EnrichInputs = {
   event: { name: string; location: string | null; dates: string | null };
+  sellerName?: string;
   buyerTitles: string[];
   industries: string[];
   speakerDocs: Array<{ url: string | null; text: string }>;
@@ -265,6 +286,7 @@ type EnrichInputs = {
     domain?: string;
     tier: "tier1_crm" | "tier2_icp";
     fitScore: number;
+    matchedOppValue?: number;
     contactName?: string;
     contactTitle?: string;
     contactQuote?: string;
@@ -469,7 +491,32 @@ type MappedAttendee = {
   attendee: DiscoveredAttendee;
   accountMatchId?: Id<"accountMatch">;
   matchTier?: "tier1_crm" | "tier2_icp";
+  matchedOppValue?: number;
 };
+
+/** Surface tier-1 named speakers from extraction in the People tab. */
+function tier1ContactsFromMatches(inputs: EnrichInputs): DiscoveredAttendee[] {
+  const out: DiscoveredAttendee[] = [];
+  for (const m of inputs.matches) {
+    if (m.tier !== "tier1_crm" || !m.contactName?.trim()) continue;
+    const title = m.contactTitle?.trim() || "Speaker";
+    const quote =
+      m.contactQuote?.trim() ||
+      `${m.contactName.trim()} listed as ${title} at ${inputs.event.name}.`;
+    out.push({
+      fullName: m.contactName.trim(),
+      title,
+      companyName: m.companyName,
+      network: "web",
+      postQuote: quote,
+      postedAt: "",
+      profileUrl: "",
+      sourceUrl: "",
+      confidence: 0.92,
+    });
+  }
+  return out;
+}
 
 /**
  * One concise, grounded "why a good match" line per attendee, returned as a
@@ -490,16 +537,24 @@ async function generateMatchReasons(
     inPipeline: m.matchTier === "tier1_crm",
     icpFit: m.matchTier === "tier2_icp",
     matchTier: m.matchTier ?? "none",
+    openPipelineUsd: m.matchedOppValue ?? 0,
+    network: m.attendee.network,
+    publicSignal: m.attendee.postQuote.slice(0, 200),
   }));
 
   try {
     const ai = await callOpenAiJson<AttendeeReasonsOutput>({
       system: [
-        "You help a B2B field-sales team decide who to meet at an event.",
-        "For each person, write ONE concise sentence (max ~20 words) on why they're a good person to meet, grounded in their role/company and the seller's ICP.",
-        "Only say someone is 'in your pipeline' when inPipeline is true. If icpFit is true (but not inPipeline), describe them as an ICP-fit / net-new prospect — do NOT claim they are in the pipeline. Never invent facts; keep it specific and useful.",
+        `You help ${inputs.sellerName ?? "a B2B sales team"} decide who to meet at ${inputs.event.name}.`,
+        "For each person, write ONE actionable sentence (max ~22 words) explaining WHY meet them AT THIS EVENT — not their job description.",
+        "Ground every line in publicSignal (their post or program listing) and/or inPipeline / icpFit.",
+        "GOOD: 'Posted about attending ICRA — CRM account with $220K open; book before sessions fill.'",
+        "BAD: 'Works at Amazon Robotics in robotics.' / 'Valuable contact for collaboration.'",
+        "If inPipeline is true, you may mention pipeline. Never claim pipeline when icpFit alone.",
+        "Never invent facts not in the input.",
       ].join(" "),
       user: [
+        `Seller: ${inputs.sellerName ?? "unknown"}`,
         `Seller ICP industries: ${inputs.industries.slice(0, 8).join(", ") || "unknown"}`,
         `Seller target buyer titles: ${inputs.buyerTitles.slice(0, 8).join(", ") || "unknown"}`,
         `Event: ${inputs.event.name}`,
@@ -555,10 +610,12 @@ export const getInputs = internalQuery({
 
     let buyerTitles: string[] = [];
     let industries: string[] = [];
+    let sellerName: string | undefined;
     if (event.revenueProfileId) {
       const profile = await ctx.db.get("revenueProfile", event.revenueProfileId);
       buyerTitles = profile?.buyerTitles ?? [];
       industries = profile?.industries ?? [];
+      sellerName = profile?.name;
     }
 
     // Speaker/program pages gathered during research — used to surface named
@@ -580,6 +637,7 @@ export const getInputs = internalQuery({
 
     return {
       event: { name: event.name, location: event.location ?? null, dates },
+      sellerName,
       buyerTitles,
       industries,
       speakerDocs,
@@ -589,6 +647,7 @@ export const getInputs = internalQuery({
         domain: m.domain,
         tier: m.tier,
         fitScore: m.fitScore,
+        matchedOppValue: m.matchedOppValue,
         contactName: m.contactName,
         contactTitle: m.contactTitle,
         contactQuote: m.contactQuote,

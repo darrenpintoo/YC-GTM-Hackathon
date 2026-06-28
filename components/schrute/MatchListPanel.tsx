@@ -1,41 +1,40 @@
 "use client";
 
 import * as React from "react";
-import { BadgeCheck, ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 
-import {
-  EvidenceChip,
-  PresenceBadge,
-  TierBadge,
-} from "@/components/schrute/atoms";
+import { AccountMatchCard } from "@/components/schrute/AccountMatchCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ROLE_LABEL } from "@/lib/labels";
 import type { AccountMatch, Contact } from "@/lib/types";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export type MatchListPanelProps = {
   matches: AccountMatch[];
   contacts?: Contact[];
+  selectedId?: string | null;
   onOpenAccount?: (m: AccountMatch) => void;
   showValue?: boolean;
-  /** Render every row when count is at or below this (default 15). */
+  /** Render every row when count is at or below this (default 6). */
   inlineMax?: number;
-  /** Rows shown before expand (default 8). */
+  /** Rows shown before expand (default 6). */
   previewCount?: number;
   showBoardLink?: boolean;
   emptyMessage?: string;
+  compact?: boolean;
 };
 
 export function MatchListPanel({
   matches,
   contacts = [],
+  selectedId,
   onOpenAccount,
   showValue,
-  inlineMax = 15,
-  previewCount = 8,
+  inlineMax = 6,
+  previewCount = 6,
   showBoardLink = false,
   emptyMessage = "No matches in this group.",
+  compact = false,
 }: MatchListPanelProps) {
   const [expanded, setExpanded] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -67,6 +66,7 @@ export function MatchListPanel({
   }
 
   const showInline = matches.length <= inlineMax;
+  const needsExpand = !showInline && filtered.length > previewCount;
   const visibleCount = showInline
     ? filtered.length
     : expanded
@@ -76,9 +76,9 @@ export function MatchListPanel({
   const hiddenCount = filtered.length - visible.length;
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       {matches.length > inlineMax ? (
-        <div className="relative">
+        <div className="relative min-w-0">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
@@ -89,7 +89,7 @@ export function MatchListPanel({
         </div>
       ) : null}
 
-      {!showInline && !expanded && filtered.length > previewCount ? (
+      {needsExpand && !expanded ? (
         <p className="text-xs text-muted-foreground">
           Showing top {previewCount} of {filtered.length} matches by fit score.
         </p>
@@ -97,27 +97,31 @@ export function MatchListPanel({
 
       <div
         className={cn(
-          "grid gap-2 sm:grid-cols-2",
-          expanded && !showInline && "max-h-72 overflow-y-auto pr-1",
+          "grid min-w-0 gap-3 sm:grid-cols-2",
+          expanded && needsExpand && "max-h-[min(28rem,55vh)] overflow-y-auto overscroll-contain pr-1",
         )}
       >
         {visible.map((m, i) => (
-          <MatchRow
+          <AccountMatchCard
             key={m._id}
             match={m}
             index={i}
             contact={contactByMatch.get(m._id)}
+            selected={selectedId === m._id}
             showValue={showValue}
-            onOpenAccount={onOpenAccount}
+            compact={compact}
+            onSelect={onOpenAccount}
           />
         ))}
       </div>
 
       {filtered.length === 0 && query ? (
-        <p className="text-sm text-muted-foreground">No companies match &ldquo;{query}&rdquo;.</p>
+        <p className="text-sm text-muted-foreground">
+          No companies match &ldquo;{query}&rdquo;.
+        </p>
       ) : null}
 
-      {!showInline && hiddenCount > 0 ? (
+      {needsExpand && hiddenCount > 0 ? (
         <Button
           type="button"
           variant="ghost"
@@ -145,81 +149,6 @@ export function MatchListPanel({
         >
           Browse full list in Accounts board ↓
         </button>
-      ) : null}
-    </div>
-  );
-}
-
-function MatchRow({
-  match,
-  index,
-  contact,
-  showValue,
-  onOpenAccount,
-}: {
-  match: AccountMatch;
-  index: number;
-  contact?: Contact;
-  showValue?: boolean;
-  onOpenAccount?: (m: AccountMatch) => void;
-}) {
-  return (
-    <div
-      role={onOpenAccount ? "button" : undefined}
-      tabIndex={onOpenAccount ? 0 : undefined}
-      onClick={onOpenAccount ? () => onOpenAccount(match) : undefined}
-      onKeyDown={
-        onOpenAccount
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onOpenAccount(match);
-              }
-            }
-          : undefined
-      }
-      style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}
-      className={cn(
-        "rounded-lg border border-border bg-card p-3 animate-in fade-in slide-in-from-bottom-1 fill-mode-backwards duration-300 motion-reduce:animate-none",
-        onOpenAccount && "cursor-pointer transition-colors hover:border-foreground/20",
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-sm font-semibold">{match.companyName}</span>
-        <div className="flex shrink-0 items-center gap-1">
-          <PresenceBadge
-            presence={match.presence}
-            editionLabel={match.editionLabel}
-            className="text-[10px]"
-          />
-          <TierBadge tier={match.tier} className="text-[10px]" />
-        </div>
-      </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        {ROLE_LABEL[match.role] ?? match.role}
-        {match.boothOrSession ? ` · ${match.boothOrSession}` : ""}
-        {showValue && match.matchedOppValue
-          ? ` · ${formatCurrency(match.matchedOppValue, { compact: true })}`
-          : ""}
-      </p>
-      {match.contactName ? (
-        <p className="mt-1 text-xs text-foreground/80">
-          {match.contactTitle ? `${match.contactTitle}: ` : ""}
-          <span className="font-medium">{match.contactName}</span>
-        </p>
-      ) : null}
-      {match.evidence?.length ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {match.evidence.map((e, i) => (
-            <EvidenceChip key={i} evidence={e} />
-          ))}
-        </div>
-      ) : null}
-      {contact ? (
-        <span className="mt-2 inline-flex items-center gap-1 rounded-md bg-tier1/15 px-2 py-0.5 text-[10px] font-medium text-tier1">
-          <BadgeCheck className="size-3" />
-          contact ready
-        </span>
       ) : null}
     </div>
   );

@@ -2,11 +2,18 @@ import { internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { extractCompaniesHeuristicWithCoverage } from "./lib/extractHeuristic";
 import { callOpenAiJson } from "./lib/openai";
 import {
+  categorySortKey,
+  scoreSourceQuality,
+} from "./lib/sourceQuality";
+import {
   AI_GUARDRAILS,
+  companyFilterSchema,
   decisionMemoSchema,
   eventExtractionSchema,
+  type CompanyFilterOutput,
   type DecisionMemoOutput,
   type EventExtractionOutput,
 } from "../lib/aiSchemas";
@@ -127,12 +134,13 @@ async function runMultiDocExtraction(
   eventId: Id<"event">,
 ): Promise<boolean> {
   try {
-    const docs = await ctx.runQuery(internal.ingest.listSourcesForExtraction, {
-      eventId,
-    });
+    const [docs, extractCtx] = await Promise.all([
+      ctx.runQuery(internal.ingest.listSourcesForExtraction, { eventId }),
+      ctx.runQuery(internal.ingest.getExtractContext, { eventId }),
+    ]);
     if (docs.length === 0) return false;
 
-    const companies: Array<{
+    type CompanyRow = {
       sourceDocumentId: Id<"sourceDocument">;
       companyName: string;
       role: string;
@@ -144,7 +152,12 @@ async function runMultiDocExtraction(
       contactName?: string;
       contactTitle?: string;
       contactQuote?: string;
-    }> = [];
+      extractionMethod?: "ai" | "heuristic" | "hybrid";
+      orgType?: string;
+      sourceSignalTier?: string;
+    };
+
+    const companies: CompanyRow[] = [];
     const facts: Array<{
       sourceDocumentId: Id<"sourceDocument">;
       factType: string;
@@ -155,29 +168,84 @@ async function runMultiDocExtraction(
     }> = [];
 
     const usableDocs = docs
-      .slice(0, MAX_DOCS_TO_EXTRACT)
-      .filter((d) => d.textContent && d.textContent.length >= 80);
+      .filter((d) => d.textContent && d.textContent.length >= 80)
+      .sort(
+        (a, b) =>
+          categorySortKey(a.category, a.recurring) -
+          categorySortKey(b.category, b.recurring),
+      )
+      .slice(0, MAX_DOCS_TO_EXTRACT);
 
-    // Extract across documents in parallel (bounded concurrency), streaming a
-    // progress count as each chunk lands. OpenAI calls dominate latency here.
-    const concurrency = 12;
+    let skipped = 0;
     let processed = 0;
+    const concurrency = 12;
+
     for (let i = 0; i < usableDocs.length; i += concurrency) {
       const chunk = usableDocs.slice(i, i + concurrency);
       const results = await Promise.all(
-        chunk.map((doc) =>
-          callOpenAiJson<EventExtractionOutput>({
+        chunk.map(async (doc) => {
+          const quality = scoreSourceQuality(
+            doc.textContent,
+            doc.category,
+            doc.signalTier ?? undefined,
+            doc.charCount,
+          );
+
+          if (
+            quality.route === "skip" ||
+            doc.scrapeStatus === "empty" ||
+            doc.scrapeStatus === "failed"
+          ) {
+            return { doc, skipped: true as const };
+          }
+
+          if (quality.route === "hybrid") {
+            const heuristic = extractCompaniesHeuristicWithCoverage(
+              doc.textContent,
+            );
+            if (heuristic.coverage >= 0.6 && heuristic.companies.length >= 3) {
+              const ai = await callOpenAiJson<EventExtractionOutput>({
+                system: `${AI_GUARDRAILS}\nValidate and extend this heuristic company list against the source. Add missing companies, named contacts, and fix roles. Copy verbatim quotes.`,
+                user: [
+                  `Heuristic extractions (JSON):\n${JSON.stringify(heuristic.companies.slice(0, 40))}`,
+                  `\nSource document text:\n\n${doc.textContent.slice(0, MAX_SOURCE_CHARS)}`,
+                ].join("\n"),
+                responseSchema: eventExtractionSchema,
+              });
+              return {
+                doc,
+                ai,
+                extractionMethod: "hybrid" as const,
+                skipped: false as const,
+              };
+            }
+          }
+
+          const ai = await callOpenAiJson<EventExtractionOutput>({
             system: `${AI_GUARDRAILS}\nExtract every company that the source proves is present at the event (exhibitor, sponsor, or speaker). For each, copy a verbatim quote from the source as proof. If the source names a person at that company (speaker, booth rep, keynote), fill contactName/contactTitle/contactQuote with a verbatim line — otherwise use empty strings. Use "unknown" for any field not in the source.`,
             user: `Source document text:\n\n${doc.textContent.slice(0, MAX_SOURCE_CHARS)}`,
             responseSchema: eventExtractionSchema,
-          }).then((ai) => ({ doc, ai })),
-        ),
+          });
+          return {
+            doc,
+            ai,
+            extractionMethod: "ai" as const,
+            skipped: false as const,
+          };
+        }),
       );
 
-      for (const { doc, ai } of results) {
+      for (const result of results) {
+        if (result.skipped) {
+          skipped += 1;
+          continue;
+        }
+        const { doc, ai, extractionMethod } = result;
         const presence: "confirmed" | "recurring" = doc.recurring
           ? "recurring"
           : "confirmed";
+        const signalTier = doc.signalTier ?? undefined;
+
         if (ai?.companies) {
           for (const c of ai.companies) {
             const cn = c.contactName?.trim();
@@ -192,12 +260,11 @@ async function runMultiDocExtraction(
               confidence: c.confidence,
               presence,
               editionLabel: doc.editionLabel ?? undefined,
-              contactName:
-                cn && cn !== "unknown" ? cn : undefined,
-              contactTitle:
-                ct && ct !== "unknown" ? ct : undefined,
-              contactQuote:
-                cq && cq !== "unknown" ? cq : undefined,
+              contactName: cn && cn !== "unknown" ? cn : undefined,
+              contactTitle: ct && ct !== "unknown" ? ct : undefined,
+              contactQuote: cq && cq !== "unknown" ? cq : undefined,
+              extractionMethod,
+              sourceSignalTier: signalTier,
             });
           }
         }
@@ -209,22 +276,106 @@ async function runMultiDocExtraction(
       processed += chunk.length;
       await ctx.runMutation(internal.ingest.markExtractRunning, {
         eventId,
-        message: `Reading sources ${processed}/${usableDocs.length}…`,
-        progress: Math.min(90, 10 + Math.round((processed / usableDocs.length) * 80)),
+        message: `Reading sources ${processed}/${usableDocs.length}${skipped > 0 ? ` · ${skipped} skipped (low signal)` : ""}…`,
+        progress: Math.min(
+          90,
+          10 + Math.round((processed / usableDocs.length) * 80),
+        ),
       });
     }
 
     if (companies.length === 0) return false;
 
+    const filtered = await filterCompaniesWithAi(companies, extractCtx);
+
     await ctx.runMutation(internal.ingest.applyExtraction, {
       eventId,
-      companies,
+      companies: filtered,
       facts,
     });
     return true;
   } catch (err) {
     console.error("Multi-doc AI extraction failed, falling back", err);
     return false;
+  }
+}
+
+type ExtractCompanyRow = {
+  sourceDocumentId: Id<"sourceDocument">;
+  companyName: string;
+  role: string;
+  boothOrSession: string;
+  quote: string;
+  confidence: number;
+  presence: "confirmed" | "recurring";
+  editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
+  extractionMethod?: "ai" | "heuristic" | "hybrid";
+  orgType?: string;
+  sourceSignalTier?: string;
+};
+
+async function filterCompaniesWithAi(
+  companies: ExtractCompanyRow[],
+  extractCtx: { industries: string[]; keywords: string[] },
+): Promise<ExtractCompanyRow[]> {
+  if (companies.length === 0) return companies;
+
+  const cap = Math.min(companies.length, 300);
+  const slice = companies.slice(0, cap);
+
+  try {
+    const payload = slice.map((c, index) => ({
+      index,
+      companyName: c.companyName,
+      role: c.role,
+      quote: c.quote.slice(0, 120),
+      presence: c.presence,
+    }));
+
+    const ai = await callOpenAiJson<CompanyFilterOutput>({
+      system: `${AI_GUARDRAILS}\nFilter extracted event companies for B2B field-sales relevance. Keep commercial orgs aligned to the seller ICP. Drop academic labs/departments, generic university entries, and duplicate subsidiaries unless they are clearly sponsors/exhibitors with strong quotes. Tier1 CRM matches are not available here — use org type and GTM relevance.`,
+      user: [
+        `Seller ICP industries: ${extractCtx.industries.join(", ") || "unknown"}`,
+        `Seller keywords: ${extractCtx.keywords.join(", ") || "unknown"}`,
+        `\nCompanies (JSON):\n${JSON.stringify(payload)}`,
+      ].join("\n"),
+      responseSchema: companyFilterSchema,
+    });
+
+    if (!ai?.companies?.length) return slice;
+
+    const decisionByIndex = new Map(ai.companies.map((r) => [r.index, r]));
+    const kept: ExtractCompanyRow[] = [];
+
+    for (let i = 0; i < slice.length; i++) {
+      const row = slice[i]!;
+      const decision = decisionByIndex.get(i);
+      if (!decision) {
+        kept.push(row);
+        continue;
+      }
+      if (!decision.keep) continue;
+
+      kept.push({
+        ...row,
+        orgType: decision.orgType,
+        confidence:
+          decision.gtmRelevance < 0.4
+            ? row.confidence * 0.5
+            : row.confidence,
+      });
+    }
+
+    console.log(
+      `Silver filter: ${slice.length} → ${kept.length} companies kept`,
+    );
+    return kept.length > 0 ? kept : slice;
+  } catch (err) {
+    console.warn("Company filter pass failed, keeping all", err);
+    return slice;
   }
 }
 

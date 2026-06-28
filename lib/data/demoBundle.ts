@@ -149,23 +149,84 @@ function roleFactType(role: EventCompanyRole): Evidence["factType"] {
   return "exhibitor";
 }
 
-export const demoMatches: AccountMatch[] = MATCH_SPECS.map((spec, i) => ({
-  _id: `demo_match_${spec.key}`,
-  eventId: ATTEND_EVENT_ID,
-  tier: spec.tier,
-  crmAccountId: spec.tier === "tier1_crm" ? `demo_crm_${spec.key}` : undefined,
-  companyName: spec.name,
-  domain: spec.domain,
-  role: spec.role,
-  boothOrSession: spec.booth,
-  fitScore: spec.fit,
-  confidence: spec.conf,
-  evidence: [ev(roleQuote(spec), roleFactType(spec.role), spec.conf)],
-  matchedOppValue: spec.opp,
-  eventCompanyId: `demo_ec_${spec.key}`,
-  rank: i + 1,
-  createdAt: NOW - 3200000,
-}));
+export const demoMatches: AccountMatch[] = MATCH_SPECS.map((spec, i) => {
+  const contacts: Record<
+    string,
+    { contactName: string; contactTitle: string }
+  > = {
+    turner: { contactName: "Jane Doe", contactTitle: "VP Safety" },
+    skanska: { contactName: "Mark Reynolds", contactTitle: "Director of EHS" },
+    mccarthy: { contactName: "Lisa Tran", contactTitle: "VP Operations" },
+    jedunn: { contactName: "David Chen", contactTitle: "VP Safety" },
+  };
+  const contact = contacts[spec.key];
+  return {
+    _id: `demo_match_${spec.key}`,
+    eventId: ATTEND_EVENT_ID,
+    tier: spec.tier,
+    crmAccountId: spec.tier === "tier1_crm" ? `demo_crm_${spec.key}` : undefined,
+    companyName: spec.name,
+    domain: spec.domain,
+    role: spec.role,
+    boothOrSession: spec.booth,
+    fitScore: spec.fit,
+    confidence: spec.conf,
+    evidence: [ev(roleQuote(spec), roleFactType(spec.role), spec.conf)],
+    matchedOppValue: spec.opp,
+    eventCompanyId: `demo_ec_${spec.key}`,
+    rank: i + 1,
+    presence: "confirmed" as const,
+    contactName: contact?.contactName,
+    contactTitle: contact?.contactTitle,
+    createdAt: NOW - 3200000,
+  };
+});
+
+const RECURRING_SPECS: Array<{
+  key: string;
+  name: string;
+  role: EventCompanyRole;
+  booth?: string;
+  editionLabel: string;
+}> = [
+  { key: "fluor", name: "Fluor Corporation", role: "sponsor", booth: "Gold Sponsor", editionLabel: "World of Concrete 2025" },
+  { key: "bechtel", name: "Bechtel", role: "exhibitor", booth: "N2100", editionLabel: "World of Concrete 2025" },
+  { key: "aecom", name: "AECOM", role: "exhibitor", booth: "S1800", editionLabel: "World of Concrete 2024" },
+  { key: "pcl", name: "PCL Construction", role: "sponsor", booth: "Silver Sponsor", editionLabel: "World of Concrete 2024" },
+  { key: "balfour", name: "Balfour Beatty US", role: "exhibitor", booth: "C902", editionLabel: "World of Concrete 2024" },
+  { key: "walsh", name: "Walsh Group", role: "exhibitor", booth: "W1400", editionLabel: "World of Concrete 2025" },
+  { key: "whiting", name: "Whiting-Turner", role: "exhibitor", booth: "N3300", editionLabel: "World of Concrete 2024" },
+  { key: "holder", name: "Holder Construction", role: "exhibitor", booth: "S1102", editionLabel: "World of Concrete 2025" },
+];
+
+export const demoRecurringMatches: AccountMatch[] = RECURRING_SPECS.map(
+  (spec, i) => ({
+    _id: `demo_match_recurring_${spec.key}`,
+    eventId: ATTEND_EVENT_ID,
+    tier: "tier2_icp" as MatchTier,
+    companyName: spec.name,
+    role: spec.role,
+    boothOrSession: spec.booth,
+    fitScore: 0.62 - i * 0.01,
+    confidence: 0.88,
+    evidence: [
+      ev(
+        `${spec.name} — ${spec.booth ?? "listed"} (${spec.editionLabel})`,
+        roleFactType(spec.role),
+        0.88,
+      ),
+    ],
+    rank: demoMatches.length + i + 1,
+    presence: "recurring" as const,
+    editionLabel: spec.editionLabel,
+    createdAt: NOW - 3200000,
+  }),
+);
+
+export const demoAllMatches: AccountMatch[] = [
+  ...demoMatches,
+  ...demoRecurringMatches,
+];
 
 export const demoCrmAccounts: CrmAccount[] = [
   ...MATCH_SPECS.filter((s) => s.tier === "tier1_crm").map((s) => ({
@@ -342,13 +403,58 @@ const demoSourceDocuments: SourceDocument[] = [
   {
     _id: SOURCE_ID,
     eventId: ATTEND_EVENT_ID,
-    kind: "snapshot",
+    kind: "url",
     url: WOC_URL,
     title: "World of Concrete 2026 Exhibitor List",
+    category: "exhibitors",
     textContent:
       "Exhibitor & Sponsor Directory — World of Concrete 2026. Booth N1234 Turner Construction · Booth S4521 Skanska USA · Gold Sponsor McCarthy Building Companies · Booth C2210 DPR Construction · Booth S3310 Suffolk Construction · Booth W1140 Webcor · Booth N8820 Mortenson · Booth S2204 Brasfield & Gorrie · Booth C1820 Hensel Phelps · Safety Track JE Dunn Construction · Booth C1102 Clark Construction · Silver Sponsor The Haskell Company · Booth N4410 Gilbane Building Company · Booth W2680 Kiewit · Booth W2201 BuildRight Materials · Booth C3015 SiteSecure Systems · Bronze Sponsor ProGuard EHS Solutions · Booth S5120 ConcreteFlow Co.",
     contentHash: "sha256:demo_woc_v2",
     fetchedAt: NOW - 3500000,
+    charCount: 4200,
+    scrapeStatus: "ok",
+  },
+  {
+    _id: "demo_source_woc_sponsors",
+    eventId: ATTEND_EVENT_ID,
+    kind: "url",
+    url: "https://www.worldofconcrete.com/en/sponsors.html",
+    title: "World of Concrete 2026 Sponsors",
+    category: "sponsors",
+    textContent:
+      "Gold Sponsor McCarthy Building Companies · Silver Sponsor The Haskell Company · Bronze Sponsor ProGuard EHS Solutions",
+    contentHash: "sha256:demo_woc_sponsors",
+    fetchedAt: NOW - 3480000,
+    charCount: 1800,
+    scrapeStatus: "ok",
+  },
+  {
+    _id: "demo_source_woc_speakers",
+    eventId: ATTEND_EVENT_ID,
+    kind: "url",
+    url: "https://www.worldofconcrete.com/en/education/speakers.html",
+    title: "Safety Track Speakers",
+    category: "speakers",
+    textContent:
+      "Safety Track 2:00 PM — JE Dunn Construction, VP Safety David Chen on jobsite compliance workflows.",
+    contentHash: "sha256:demo_woc_speakers",
+    fetchedAt: NOW - 3460000,
+    charCount: 950,
+    scrapeStatus: "ok",
+  },
+  {
+    _id: "demo_source_woc_2025",
+    eventId: ATTEND_EVENT_ID,
+    kind: "url",
+    url: "https://www.worldofconcrete.com/en/2025-exhibitors.html",
+    title: "World of Concrete 2025 Exhibitor Archive",
+    category: "past_edition",
+    textContent:
+      "Past edition exhibitors: Fluor Corporation Gold Sponsor · Bechtel Booth N2100 · Walsh Group Booth W1400 · Holder Construction Booth S1102",
+    contentHash: "sha256:demo_woc_2025",
+    fetchedAt: NOW - 3440000,
+    charCount: 2100,
+    scrapeStatus: "ok",
   },
 ];
 
@@ -380,7 +486,9 @@ export const demoAttendScore: EventScore = {
   sponsorCap: 12000,
   matchedPipelineValue: openOppValue,
   tier1MatchCount: demoMatches.filter((m) => m.tier === "tier1_crm").length,
-  tier2MatchCount: demoMatches.filter((m) => m.tier === "tier2_icp").length,
+  tier2MatchCount:
+    demoMatches.filter((m) => m.tier === "tier2_icp").length +
+    demoRecurringMatches.length,
   recommendation: "attend",
   subScores: {
     pipelinePresence: 0.91,
@@ -436,8 +544,8 @@ const demoJobs: Job[] = [
   { _id: "demo_job_match", eventId: ATTEND_EVENT_ID, step: "match", status: "completed", message: "18 of your accounts matched", progress: 100, updatedAt: NOW - 3200000 },
   { _id: "demo_job_score", eventId: ATTEND_EVENT_ID, step: "score", status: "completed", message: "Recommendation: attend", progress: 100, updatedAt: NOW - 3000000 },
   { _id: "demo_job_memo", eventId: ATTEND_EVENT_ID, step: "memo", status: "completed", message: "Attend — don't sponsor over $12K", progress: 100, updatedAt: NOW - 2900000 },
-  { _id: "demo_job_enrich", eventId: ATTEND_EVENT_ID, step: "enrich", status: "running", message: "Fiber enrichment (sidecar)", progress: 55, updatedAt: NOW - 2800000 },
-  { _id: "demo_job_outreach", eventId: ATTEND_EVENT_ID, step: "outreach", status: "running", message: "Drafting meeting requests", progress: 40, updatedAt: NOW - 2750000 },
+  { _id: "demo_job_enrich", eventId: ATTEND_EVENT_ID, step: "enrich", status: "completed", message: "8 attendees · 5 contacts", progress: 100, updatedAt: NOW - 2800000 },
+  { _id: "demo_job_outreach", eventId: ATTEND_EVENT_ID, step: "outreach", status: "completed", message: "4 drafts ready", progress: 100, updatedAt: NOW - 2750000 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -451,7 +559,7 @@ export const demoAttendBundle: SchruteDemoBundle = {
   sourceDocuments: demoSourceDocuments,
   eventFacts: [],
   eventCompanies: demoEventCompanies,
-  accountMatches: demoMatches,
+  accountMatches: demoAllMatches,
   eventScore: demoAttendScore,
   decisionMemo: demoAttendMemo,
   contacts: demoContacts,
@@ -657,6 +765,8 @@ export const demoAttendees: LikelyAttendee[] = [
     postedAt: "2026-01-12",
     confidence: 0.96,
     profileUrl: "https://www.linkedin.com/in/marcus-hill-turner",
+    matchReason:
+      "Posted about attending World of Concrete — CRM account; warm outreach while they're planning the trip.",
   },
   {
     id: "att_skanska_elena",
@@ -671,6 +781,8 @@ export const demoAttendees: LikelyAttendee[] = [
     postedAt: "2026-01-10",
     confidence: 0.94,
     profileUrl: "https://www.linkedin.com/in/elena-park-ehs",
+    matchReason:
+      "CRM account with open pipeline; posted about WoC booth S4521 — book before the floor gets loud.",
   },
   {
     id: "att_mccarthy_dwight",
@@ -685,6 +797,8 @@ export const demoAttendees: LikelyAttendee[] = [
     postedAt: "2026-01-08",
     confidence: 0.92,
     profileUrl: "https://www.linkedin.com/in/dwight-powell-mccarthy",
+    matchReason:
+      "Gold sponsor posted about WoC — active CRM account; prioritize a booth walk-by.",
   },
   {
     id: "att_dpr_tom",

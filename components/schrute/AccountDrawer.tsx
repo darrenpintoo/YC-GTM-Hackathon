@@ -365,7 +365,7 @@ function ContactRow({ contact }: { contact: Contact }) {
         : "bg-muted text-muted-foreground border-border";
 
   return (
-    <li className="rounded-lg border border-border bg-background/40 p-3">
+    <div className="rounded-lg border border-border bg-background/40 p-3">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-medium">{contact.fullName}</p>
@@ -398,7 +398,7 @@ function ContactRow({ contact }: { contact: Contact }) {
           </a>
         ) : null}
       </div>
-    </li>
+    </div>
   );
 }
 
