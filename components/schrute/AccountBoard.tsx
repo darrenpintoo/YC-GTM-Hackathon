@@ -103,10 +103,11 @@ function TierGroup({
         </span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {matches.map((match) => (
+        {matches.map((match, i) => (
           <AccountCard
             key={match._id}
             match={match}
+            index={i}
             contact={contactByMatch.get(match._id)}
             selected={selectedId === match._id}
             onSelect={onSelect}
@@ -119,21 +120,33 @@ function TierGroup({
 
 function AccountCard({
   match,
+  index,
   contact,
   selected,
   onSelect,
 }: {
   match: AccountMatch;
+  index: number;
   contact?: Contact;
   selected: boolean;
   onSelect: (match: AccountMatch) => void;
 }) {
   return (
-    <button
-      type="button"
+    // Not a <button>: it contains interactive evidence chips (also buttons),
+    // and nested buttons are invalid HTML. Use a clickable div with a11y.
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(match)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(match);
+        }
+      }}
+      style={{ animationDelay: `${Math.min(index, 12) * 45}ms` }}
       className={cn(
-        "group flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-all hover:border-primary/50 hover:shadow-md",
+        "group flex w-full animate-in cursor-pointer flex-col gap-3 rounded-xl border bg-card p-4 text-left fade-in slide-in-from-bottom-2 outline-none transition-all duration-500 fill-mode-backwards hover:border-primary/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/60",
         selected ? "border-primary ring-1 ring-primary/40" : "border-border",
       )}
     >
@@ -179,7 +192,7 @@ function AccountCard({
           </span>
         ) : null}
       </div>
-    </button>
+    </div>
   );
 }
 

@@ -97,6 +97,18 @@ export const getBySlug = query({
       location: v.optional(v.string()),
       sponsorQuote: v.optional(v.number()),
       revenueProfileId: v.optional(v.id("revenueProfile")),
+      assumptions: v.optional(
+        v.object({
+          sponsorCost: v.number(),
+          travelCost: v.number(),
+          repTimeCost: v.number(),
+          avgDealSize: v.number(),
+          meetingToOppRate: v.number(),
+          winRate: v.number(),
+          riskDiscount: v.number(),
+          captureRate: v.number(),
+        }),
+      ),
       createdAt: v.number(),
     }),
     v.null(),

@@ -3,7 +3,8 @@
 import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
-import { mockDemoBundle } from "@/lib/mocks";
+import { DEMO_SCENARIOS } from "@/lib/data/demoBundle";
+import { useDataMode } from "@/lib/data/DataModeContext";
 import type {
   AccountMatch,
   Contact,
@@ -15,16 +16,16 @@ import type {
   Job,
   OutreachDraft,
   RevenueProfile,
+  SourceDocument,
 } from "@/lib/types";
 
 /**
  * Data-adapter seam (Darren).
  *
  * The whole UI consumes this hook and never calls Convex directly, so we can
- * develop against `mockDemoBundle` and flip to live Convex with one env flag.
- *
- *   NEXT_PUBLIC_USE_MOCKS=false  -> live Convex (contracts.ts queries + seedDemo)
- *   (anything else / unset)      -> mock data (default)
+ * develop against rich demo data and flip to live Convex at runtime via the
+ * Mock/Live toggle (DataModeContext). The initial mode is seeded from
+ * NEXT_PUBLIC_USE_MOCKS ("false" => live).
  */
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS !== "false";
 
@@ -35,6 +36,7 @@ export type EventBundle = {
   revenueProfile: RevenueProfile;
   crmAccounts: CrmAccount[];
   eventCompanies: EventCompany[];
+  sourceDocuments: SourceDocument[];
   matches: AccountMatch[];
   score: EventScore | null;
   memo: DecisionMemo | null;
@@ -44,72 +46,77 @@ export type EventBundle = {
 };
 
 export type UseEventBundleResult = {
-  /** Fully resolved bundle, or null when live data is not yet seeded. */
   bundle: EventBundle | null;
-  /** True while live queries are still loading their first result. */
   isLoading: boolean;
-  /** Convenience flag: a scored event with matches is available. */
   hasResults: boolean;
 };
 
-/** Stable shape used everywhere in the UI, regardless of data source. */
 export function useEventBundle(): UseEventBundleResult {
+  const { mode, scenario } = useDataMode();
+  const isMock = mode === "mock";
+
   // Hooks must run unconditionally; in mock mode we pass "skip" so no network.
   const liveEvent = useQuery(
     api.events.getBySlug,
-    USE_MOCKS ? "skip" : { slug: DEMO_EVENT_SLUG },
+    isMock ? "skip" : { slug: DEMO_EVENT_SLUG },
   );
   const eventId = liveEvent?._id;
 
   const liveMatches = useQuery(
     api.contracts.listAccountMatchesByEvent,
-    !USE_MOCKS && eventId ? { eventId } : "skip",
+    !isMock && eventId ? { eventId } : "skip",
   );
   const liveScore = useQuery(
     api.contracts.getEventScore,
-    !USE_MOCKS && eventId ? { eventId } : "skip",
+    !isMock && eventId ? { eventId } : "skip",
   );
   const liveMemo = useQuery(
     api.contracts.getDecisionMemo,
-    !USE_MOCKS && eventId ? { eventId } : "skip",
+    !isMock && eventId ? { eventId } : "skip",
   );
   const liveJobs = useQuery(
     api.contracts.listJobsByEvent,
-    !USE_MOCKS && eventId ? { eventId } : "skip",
+    !isMock && eventId ? { eventId } : "skip",
   );
   const liveCompanies = useQuery(
     api.ingest.listEventCompanies,
-    !USE_MOCKS && eventId ? { eventId } : "skip",
+    !isMock && eventId ? { eventId } : "skip",
+  );
+  const liveSources = useQuery(
+    api.ingest.listSourceDocuments,
+    !isMock && eventId ? { eventId } : "skip",
   );
   const liveProfile = useQuery(
     api.profile.get,
-    !USE_MOCKS && liveEvent?.revenueProfileId
+    !isMock && liveEvent?.revenueProfileId
       ? { profileId: liveEvent.revenueProfileId }
       : "skip",
   );
   const liveAccounts = useQuery(
     api.profile.listAccounts,
-    !USE_MOCKS && liveEvent?.revenueProfileId
+    !isMock && liveEvent?.revenueProfileId
       ? { profileId: liveEvent.revenueProfileId }
       : "skip",
   );
 
-  if (USE_MOCKS) {
+  if (isMock) {
+    const demo = DEMO_SCENARIOS[scenario].bundle;
     return {
       bundle: {
-        event: mockDemoBundle.event,
-        revenueProfile: mockDemoBundle.revenueProfile,
-        crmAccounts: mockDemoBundle.crmAccounts,
-        eventCompanies: mockDemoBundle.eventCompanies,
-        matches: mockDemoBundle.accountMatches,
-        score: mockDemoBundle.eventScore,
-        memo: mockDemoBundle.decisionMemo,
-        contacts: mockDemoBundle.contacts,
-        outreachDrafts: mockDemoBundle.outreachDrafts,
-        jobs: mockDemoBundle.jobs,
+        event: demo.event,
+        revenueProfile: demo.revenueProfile,
+        crmAccounts: demo.crmAccounts,
+        eventCompanies: demo.eventCompanies,
+        sourceDocuments: demo.sourceDocuments,
+        matches: demo.accountMatches,
+        score: demo.eventScore,
+        memo: demo.decisionMemo,
+        contacts: demo.contacts,
+        outreachDrafts: demo.outreachDrafts,
+        jobs: demo.jobs,
       },
       isLoading: false,
-      hasResults: true,
+      hasResults: demo.accountMatches.length > 0,
     };
   }
 
@@ -125,22 +132,23 @@ export function useEventBundle(): UseEventBundleResult {
   const score = (liveScore ?? null) as unknown as EventScore | null;
   const memo = (liveMemo ?? null) as unknown as DecisionMemo | null;
 
+  // Contacts + outreach live behind Nehal's sidecar; no contract query yet.
+  // Fall back to the demo enrichment so the drawer is populated in live mode.
+  const demoFallback = DEMO_SCENARIOS.attend.bundle;
+
   const bundle: EventBundle = {
     event: liveEvent as unknown as Event,
-    // Profile may still be loading; fall back to mock so the UI never breaks.
     revenueProfile:
       (liveProfile as unknown as RevenueProfile | null) ??
-      mockDemoBundle.revenueProfile,
+      demoFallback.revenueProfile,
     crmAccounts: (liveAccounts ?? []) as unknown as CrmAccount[],
     eventCompanies: (liveCompanies ?? []) as unknown as EventCompany[],
+    sourceDocuments: (liveSources ?? []) as unknown as SourceDocument[],
     matches,
     score,
     memo,
-    // Contacts + outreach live behind Nehal's sidecar; no contract query yet.
-    // Fall back to mock so the drawer is populated in the demo. (TODO: add
-    // convex/contracts.ts queries for contacts/outreachDrafts by event.)
-    contacts: mockDemoBundle.contacts,
-    outreachDrafts: mockDemoBundle.outreachDrafts,
+    contacts: demoFallback.contacts,
+    outreachDrafts: demoFallback.outreachDrafts,
     jobs: (liveJobs ?? []) as unknown as Job[],
   };
 

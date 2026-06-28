@@ -9,6 +9,7 @@ import {
   Quote,
 } from "lucide-react";
 
+import { useEvidenceInspector } from "@/components/schrute/EvidenceInspector";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -103,24 +104,51 @@ export function StatPill({
 }
 
 export function EvidenceChip({ evidence }: { evidence: Evidence }) {
+  const inspector = useEvidenceInspector();
+
+  const chipClass =
+    "inline-flex items-center gap-1 rounded-md border border-border bg-background/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground";
+
+  const inner = (
+    <>
+      <Quote className="size-3" />
+      <span className="capitalize">{evidence.factType}</span>
+      {inspector ? null : <ExternalLink className="size-2.5 opacity-60" />}
+    </>
+  );
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <a
-          href={evidence.sourceUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Quote className="size-3" />
-          <span className="capitalize">{evidence.factType}</span>
-          <ExternalLink className="size-2.5 opacity-60" />
-        </a>
+        {inspector ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              // Don't let the click bubble to a clickable parent (e.g. account card).
+              e.stopPropagation();
+              inspector.inspect(evidence);
+            }}
+            className={chipClass}
+          >
+            {inner}
+          </button>
+        ) : (
+          <a
+            href={evidence.sourceUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={(e) => e.stopPropagation()}
+            className={chipClass}
+          >
+            {inner}
+          </a>
+        )}
       </TooltipTrigger>
       <TooltipContent>
         <p className="font-medium">&ldquo;{evidence.quote}&rdquo;</p>
         <p className="mt-1 text-muted-foreground">
-          Source · confidence {Math.round(evidence.confidence * 100)}%
+          {inspector ? "Click to inspect source" : "Open source"} · confidence{" "}
+          {Math.round(evidence.confidence * 100)}%
         </p>
       </TooltipContent>
     </Tooltip>

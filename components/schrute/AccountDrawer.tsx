@@ -7,10 +7,12 @@ import {
   Check,
   Copy,
   Link2,
+  Loader2,
   Mail,
   Phone,
   Plus,
   Quote,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,6 +37,7 @@ type AccountDrawerProps = {
   match: AccountMatch | null;
   contacts: Contact[];
   outreachDrafts: OutreachDraft[];
+  eventName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAddToWorklist?: (match: AccountMatch) => void;
@@ -44,6 +47,7 @@ export function AccountDrawer({
   match,
   contacts,
   outreachDrafts,
+  eventName,
   open,
   onOpenChange,
   onAddToWorklist,
@@ -53,7 +57,10 @@ export function AccountDrawer({
       <SheetContent className="overflow-y-auto p-0">
         {match ? (
           <DrawerBody
+            // Remount per account so live-enrich state resets cleanly.
+            key={match._id}
             match={match}
+            eventName={eventName}
             contacts={contacts.filter((c) => c.accountMatchId === match._id)}
             drafts={outreachDrafts.filter(
               (d) => d.accountMatchId === match._id,
@@ -66,17 +73,92 @@ export function AccountDrawer({
   );
 }
 
+const ENRICH_TITLES = [
+  "VP Safety",
+  "Director of EHS",
+  "Safety Manager",
+  "VP Operations",
+];
+const ENRICH_FIRST = ["Alex", "Jordan", "Sam", "Taylor", "Morgan", "Casey"];
+const ENRICH_LAST = ["Rivera", "Nguyen", "Patel", "Brooks", "Okafor", "Lopez"];
+
+function hashIndex(seed: string, mod: number) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return h % mod;
+}
+
+function synthesizeEnrichment(
+  match: AccountMatch,
+  eventName?: string,
+): { contact: Contact; draft: OutreachDraft } {
+  const first = ENRICH_FIRST[hashIndex(match.companyName, ENRICH_FIRST.length)]!;
+  const last = ENRICH_LAST[hashIndex(match._id, ENRICH_LAST.length)]!;
+  const title = ENRICH_TITLES[hashIndex(match.companyName + "t", ENRICH_TITLES.length)]!;
+  const domain = match.domain;
+  const email = domain
+    ? `${first.toLowerCase()}.${last.toLowerCase()}@${domain}`
+    : undefined;
+  const where = eventName ?? "the show";
+  const booth = match.boothOrSession ? ` (${match.boothOrSession})` : "";
+
+  return {
+    contact: {
+      _id: `enriched_contact_${match._id}`,
+      accountMatchId: match._id,
+      eventId: match.eventId,
+      fullName: `${first} ${last}`,
+      title,
+      email,
+      verification: "likely",
+      createdAt: Date.now(),
+    },
+    draft: {
+      _id: `enriched_outreach_${match._id}`,
+      accountMatchId: match._id,
+      contactId: `enriched_contact_${match._id}`,
+      eventId: match.eventId,
+      subject: `Meet at ${where}?`,
+      body: `Hi ${first} — saw ${match.companyName} is on the floor at ${where}${booth}. We help GCs like yours cut subcontractor-compliance overhead and I'd value 15 minutes while we're both there. Open to a quick coffee?`,
+      tone: "direct",
+      createdAt: Date.now(),
+    },
+  };
+}
+
 function DrawerBody({
   match,
   contacts,
   drafts,
+  eventName,
   onAddToWorklist,
 }: {
   match: AccountMatch;
   contacts: Contact[];
   drafts: OutreachDraft[];
+  eventName?: string;
   onAddToWorklist?: (match: AccountMatch) => void;
 }) {
+  const [enriching, setEnriching] = React.useState(false);
+  const [enrichedContacts, setEnrichedContacts] = React.useState<Contact[]>([]);
+  const [enrichedDrafts, setEnrichedDrafts] = React.useState<OutreachDraft[]>(
+    [],
+  );
+
+  const allContacts = [...contacts, ...enrichedContacts];
+  const allDrafts = [...drafts, ...enrichedDrafts];
+
+  function findDecisionMakers() {
+    setEnriching(true);
+    setTimeout(() => {
+      const { contact, draft } = synthesizeEnrichment(match, eventName);
+      setEnrichedContacts([contact]);
+      setEnrichedDrafts([draft]);
+      setEnriching(false);
+      toast.success(`Found a likely contact at ${match.companyName}`);
+    }, 1200);
+  }
+
   return (
     <>
       <SheetHeader>
@@ -135,13 +217,34 @@ function DrawerBody({
         <Separator />
 
         <Section title="Decision-makers" icon={<Building2 className="size-4" />}>
-          {contacts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Enrichment pending — contacts arrive from the Fiber sidecar.
-            </p>
+          {allContacts.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border p-3 text-center">
+              <p className="text-sm text-muted-foreground">
+                No contact yet — pull a likely decision-maker from the
+                enrichment sidecar.
+              </p>
+              <Button
+                size="sm"
+                className="mt-2"
+                disabled={enriching}
+                onClick={findDecisionMakers}
+              >
+                {enriching ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Enriching…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-4" />
+                    Find decision-makers
+                  </>
+                )}
+              </Button>
+            </div>
           ) : (
             <ul className="space-y-3">
-              {contacts.map((c) => (
+              {allContacts.map((c) => (
                 <ContactRow key={c._id} contact={c} />
               ))}
             </ul>
@@ -151,13 +254,13 @@ function DrawerBody({
         <Separator />
 
         <Section title="Outreach drafts" icon={<Mail className="size-4" />}>
-          {drafts.length === 0 ? (
+          {allDrafts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No drafts yet. Outreach is generated once a contact is enriched.
             </p>
           ) : (
             <div className="space-y-4">
-              {drafts.map((d) => (
+              {allDrafts.map((d) => (
                 <OutreachEditor key={d._id} draft={d} />
               ))}
             </div>

@@ -1,12 +1,13 @@
 "use client";
 
-import { Activity, Database } from "lucide-react";
+import { Activity, Cloud, FlaskConical } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { USE_MOCKS } from "@/lib/data/useEventBundle";
+import { useDataMode } from "@/lib/data/DataModeContext";
 import { cn } from "@/lib/utils";
 
 export function AppHeader({ className }: { className?: string }) {
+  const { mode, setMode } = useDataMode();
+
   return (
     <header
       className={cn(
@@ -27,14 +28,47 @@ export function AppHeader({ className }: { className?: string }) {
           </div>
         </div>
 
-        <Badge
-          variant={USE_MOCKS ? "secondary" : "success"}
-          className="font-mono"
-        >
-          <Database className="size-3" />
-          {USE_MOCKS ? "mock data" : "live · convex"}
-        </Badge>
+        <ModeToggle mode={mode} setMode={setMode} />
       </div>
     </header>
+  );
+}
+
+function ModeToggle({
+  mode,
+  setMode,
+}: {
+  mode: "mock" | "live";
+  setMode: (m: "mock" | "live") => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5 text-xs">
+      <button
+        type="button"
+        onClick={() => setMode("mock")}
+        className={cn(
+          "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors",
+          mode === "mock"
+            ? "bg-secondary text-foreground"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <FlaskConical className="size-3.5" />
+        Demo
+      </button>
+      <button
+        type="button"
+        onClick={() => setMode("live")}
+        className={cn(
+          "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors",
+          mode === "live"
+            ? "bg-success/20 text-success"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Cloud className="size-3.5" />
+        Live · Convex
+      </button>
+    </div>
   );
 }
