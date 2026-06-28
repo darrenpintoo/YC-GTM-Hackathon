@@ -36,7 +36,7 @@ export const OBJECTIVES: ObjectiveDef[] = [
     blurb: "Attend, sponsor, speak, exhibit — or skip. Know how hard to go in.",
     question: {
       field: "repCount",
-      label: "How many reps could you send?",
+      label: "How many reps on the ground?",
       placeholder: "2",
       inputMode: "numeric",
     },
@@ -122,11 +122,25 @@ export function evaluateParticipation(
   switch (key) {
     case "attend": {
       if (ctx.accountsPresent > 0) {
-        const reps = ctx.repCount && ctx.repCount > 0 ? ctx.repCount : 2;
+        if (ctx.repCount === 0) {
+          return {
+            status: "no",
+            headline: "No reps",
+            reason: `${ctx.accountsPresent} accounts are on the floor, but zero reps means you miss them live. Pre-book virtual meetings or send at least one.`,
+          };
+        }
+        if (ctx.repCount === undefined) {
+          return {
+            status: "maybe",
+            headline: "Assumes 2",
+            reason: `${ctx.accountsPresent} of your accounts are on the floor. Headcount is not set, so Schrute is using a 2-rep planning assumption.`,
+          };
+        }
+        const reps = ctx.repCount > 0 ? ctx.repCount : 2;
         return {
           status: "yes",
           headline: "Do this",
-          reason: `${ctx.accountsPresent} of your accounts are on the floor. Send ${reps} reps with badges to work them.`,
+          reason: `${ctx.accountsPresent} of your accounts are on the floor. Send ${reps} rep${reps === 1 ? "" : "s"} with badges to work them.`,
         };
       }
       return {

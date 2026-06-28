@@ -111,5 +111,6 @@ export const accountMatchFields = {
   matchedOppValue: v.optional(v.number()),
   eventCompanyId: v.optional(v.id("eventCompany")),
   rank: v.optional(v.number()),
+  meetingReason: v.optional(v.string()),
   createdAt: v.number(),
 };

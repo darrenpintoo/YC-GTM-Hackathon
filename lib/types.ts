@@ -197,6 +197,7 @@ export type AccountMatch = {
   matchedOppValue?: number;
   eventCompanyId?: SchruteId<"eventCompany">;
   rank?: number;
+  meetingReason?: string;
   createdAt: number;
 };
 

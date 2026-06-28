@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { matchAccounts } from "./lib/matching";
 import { upsertJob } from "./lib/jobs";
 import type { Id } from "./_generated/dataModel";
+import { buildAccountMeetingReason } from "../lib/accountMeetingReason";
 
 export const run = internalMutation({
   args: {
@@ -97,6 +98,31 @@ export const run = internalMutation({
     const now = Date.now();
     let rank = 1;
     for (const candidate of candidates) {
+      const evidence = {
+        sourceDocumentId: candidate.evidence
+          .sourceDocumentId as Id<"sourceDocument">,
+        sourceUrl: candidate.evidence.sourceUrl,
+        quote: candidate.evidence.quote,
+        factType: candidate.evidence.factType,
+        confidence: candidate.evidence.confidence,
+      };
+      const meetingReason = buildAccountMeetingReason({
+        eventName: event.name,
+        sellerName: profile.name,
+        buyerTitles: profile.buyerTitles,
+        companyName: candidate.companyName,
+        domain: candidate.domain,
+        tier: candidate.tier,
+        role: candidate.role,
+        boothOrSession: candidate.boothOrSession,
+        matchedOppValue: candidate.matchedOppValue,
+        contactName: candidate.contactName,
+        contactTitle: candidate.contactTitle,
+        evidenceQuote: candidate.evidence.quote,
+        presence: candidate.presence ?? "confirmed",
+        editionLabel: candidate.editionLabel,
+      });
+
       await ctx.db.insert("accountMatch", {
         eventId: args.eventId,
         tier: candidate.tier,
@@ -112,19 +138,11 @@ export const run = internalMutation({
         contactName: candidate.contactName,
         contactTitle: candidate.contactTitle,
         contactQuote: candidate.contactQuote,
-        evidence: [
-          {
-            sourceDocumentId: candidate.evidence
-              .sourceDocumentId as Id<"sourceDocument">,
-            sourceUrl: candidate.evidence.sourceUrl,
-            quote: candidate.evidence.quote,
-            factType: candidate.evidence.factType,
-            confidence: candidate.evidence.confidence,
-          },
-        ],
+        evidence: [evidence],
         matchedOppValue: candidate.matchedOppValue,
         eventCompanyId: candidate.eventCompanyId as Id<"eventCompany">,
         rank,
+        meetingReason,
         createdAt: now,
       });
       rank += 1;

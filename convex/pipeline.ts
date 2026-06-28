@@ -113,7 +113,11 @@ export const runFullPipeline = internalAction({
       eventId: args.eventId,
       warmCache: args.warmCache,
     });
-
+    
+    await ctx.runAction(internal.enrich.generateMeetingReasons, {
+      eventId: args.eventId,
+    });
+    
     if (args.warmCache) {
       await paceWarmStage("match");
     }
