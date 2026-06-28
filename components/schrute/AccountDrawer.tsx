@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useAction } from "convex/react";
 import {
   BadgeCheck,
   Building2,
@@ -12,12 +13,17 @@ import {
   Phone,
   Plus,
   Quote,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { TierBadge } from "@/components/schrute/atoms";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { useDataMode } from "@/lib/data/DataModeContext";
+import {
+  resolveAccountMeetingReason,
+  type AccountMeetingContext,
+} from "@/lib/accountMeetingReason";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -29,16 +35,19 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ROLE_LABEL, VERIFICATION_META } from "@/lib/labels";
 import type { AccountMatch, Contact, OutreachDraft } from "@/lib/types";
-import { cn, formatCurrency, formatPercent } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 
 type AccountDrawerProps = {
   match: AccountMatch | null;
   contacts: Contact[];
   outreachDrafts: OutreachDraft[];
   eventName?: string;
+  sellerName?: string;
+  buyerTitles?: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAddToWorklist?: (match: AccountMatch) => void;
@@ -49,6 +58,8 @@ export function AccountDrawer({
   contacts,
   outreachDrafts,
   eventName,
+  sellerName,
+  buyerTitles,
   open,
   onOpenChange,
   onAddToWorklist,
@@ -58,10 +69,11 @@ export function AccountDrawer({
       <SheetContent className="overflow-y-auto p-0">
         {match ? (
           <DrawerBody
-            // Remount per account so live-enrich state resets cleanly.
             key={match._id}
             match={match}
             eventName={eventName}
+            sellerName={sellerName}
+            buyerTitles={buyerTitles}
             contacts={contacts.filter((c) => c.accountMatchId === match._id)}
             drafts={outreachDrafts.filter(
               (d) => d.accountMatchId === match._id,
@@ -127,21 +139,51 @@ function synthesizeEnrichment(
   };
 }
 
+function meetingContext(
+  match: AccountMatch,
+  eventName?: string,
+  sellerName?: string,
+  buyerTitles?: string[],
+): AccountMeetingContext {
+  return {
+    eventName: eventName ?? "this event",
+    sellerName,
+    buyerTitles,
+    companyName: match.companyName,
+    domain: match.domain,
+    tier: match.tier,
+    role: match.role,
+    boothOrSession: match.boothOrSession,
+    matchedOppValue: match.matchedOppValue,
+    contactName: match.contactName,
+    contactTitle: match.contactTitle,
+    evidenceQuote: match.evidence[0]?.quote,
+    presence: match.presence,
+    editionLabel: match.editionLabel,
+  };
+}
+
 function DrawerBody({
   match,
   contacts,
   drafts,
   eventName,
+  sellerName,
+  buyerTitles,
   onAddToWorklist,
 }: {
   match: AccountMatch;
   contacts: Contact[];
   drafts: OutreachDraft[];
   eventName?: string;
+  sellerName?: string;
+  buyerTitles?: string[];
   onAddToWorklist?: (match: AccountMatch) => void;
 }) {
   const { mode } = useDataMode();
+  const enrichAccountMatch = useAction(api.enrich.enrichAccountMatch);
   const [enriching, setEnriching] = React.useState(false);
+  const [enrichFailed, setEnrichFailed] = React.useState(false);
   const [enrichedContacts, setEnrichedContacts] = React.useState<Contact[]>([]);
   const [enrichedDrafts, setEnrichedDrafts] = React.useState<OutreachDraft[]>(
     [],
@@ -167,17 +209,54 @@ function DrawerBody({
   ];
   const allDrafts = [...drafts, ...enrichedDrafts];
 
-  function findDecisionMakers() {
-    if (mode !== "mock") return;
-    setEnriching(true);
-    setTimeout(() => {
-      const { contact, draft } = synthesizeEnrichment(match, eventName);
-      setEnrichedContacts([contact]);
-      setEnrichedDrafts([draft]);
-      setEnriching(false);
-      toast.success(`Found a likely contact at ${match.companyName}`);
-    }, 1200);
-  }
+  const whyMeet = resolveAccountMeetingReason(
+    match.meetingReason,
+    meetingContext(match, eventName, sellerName, buyerTitles),
+  );
+
+  React.useEffect(() => {
+    if (allContacts.length > 0) return;
+
+    let cancelled = false;
+
+    async function preload() {
+      setEnriching(true);
+      setEnrichFailed(false);
+
+      if (mode === "mock") {
+        await new Promise((r) => setTimeout(r, 400));
+        if (cancelled) return;
+        const { contact, draft } = synthesizeEnrichment(match, eventName);
+        setEnrichedContacts([contact]);
+        setEnrichedDrafts([draft]);
+        setEnriching(false);
+        return;
+      }
+
+      try {
+        const result = await enrichAccountMatch({
+          accountMatchId: match._id as Id<"accountMatch">,
+        });
+        if (cancelled) return;
+        if (!result.found) setEnrichFailed(true);
+      } catch {
+        if (!cancelled) setEnrichFailed(true);
+      } finally {
+        if (!cancelled) setEnriching(false);
+      }
+    }
+
+    void preload();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    allContacts.length,
+    enrichAccountMatch,
+    eventName,
+    match,
+    mode,
+  ]);
 
   return (
     <>
@@ -191,20 +270,21 @@ function DrawerBody({
         </div>
         <SheetTitle className="text-xl">{match.companyName}</SheetTitle>
         <SheetDescription>
-          {match.domain ?? "Confirmed company presence — not a personal-attendance claim."}
+          {match.domain ??
+            "Confirmed company presence — not a personal-attendance claim."}
         </SheetDescription>
 
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          <MiniStat label="Fit" value={formatPercent(match.fitScore)} />
-          <MiniStat label="Confidence" value={formatPercent(match.confidence)} />
-          {match.matchedOppValue ? (
+        <WhyMeetBlock reason={whyMeet} />
+
+        {match.matchedOppValue ? (
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
             <MiniStat
               label="Open pipeline"
               value={formatCurrency(match.matchedOppValue, { compact: true })}
               accent
             />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </SheetHeader>
 
       <div className="space-y-6 px-6">
@@ -237,33 +317,21 @@ function DrawerBody({
         <Separator />
 
         <Section title="Decision-makers" icon={<Building2 className="size-4" />}>
-          {allContacts.length === 0 ? (
+          {enriching ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Finding decision-makers…
+              </div>
+              <Skeleton className="h-20 w-full rounded-lg" />
+            </div>
+          ) : allContacts.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-3 text-center">
               <p className="text-sm text-muted-foreground">
-                {mode === "live"
-                  ? "Decision-maker enrichment runs with the pipeline — check back when the enrich step completes."
-                  : "No contact yet — pull a likely decision-maker from demo enrichment."}
+                {enrichFailed
+                  ? "No public decision-maker found for this listing."
+                  : "No contact surfaced yet for this account."}
               </p>
-              {mode === "mock" ? (
-                <Button
-                  size="sm"
-                  className="mt-2"
-                  disabled={enriching}
-                  onClick={findDecisionMakers}
-                >
-                  {enriching ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Enriching…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="size-4" />
-                      Find decision-makers
-                    </>
-                  )}
-                </Button>
-              ) : null}
             </div>
           ) : (
             <ul className="space-y-3">
@@ -284,7 +352,9 @@ function DrawerBody({
         <Section title="Outreach drafts" icon={<Mail className="size-4" />}>
           {allDrafts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No drafts yet. Outreach is generated once a contact is enriched.
+              {enriching
+                ? "Draft will appear once a contact is found."
+                : "No drafts yet. Outreach is generated once a contact is enriched."}
             </p>
           ) : (
             <div className="space-y-4">
@@ -308,6 +378,15 @@ function DrawerBody({
         </Button>
       </SheetFooter>
     </>
+  );
+}
+
+function WhyMeetBlock({ reason }: { reason: string }) {
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+      <p className="eyebrow text-success">Why meet</p>
+      <p className="mt-1 text-sm leading-relaxed text-foreground">{reason}</p>
+    </div>
   );
 }
 

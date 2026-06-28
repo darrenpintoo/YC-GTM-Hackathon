@@ -25,6 +25,7 @@ import type {
   SchruteDemoBundle,
   SourceDocument,
 } from "@/lib/types";
+import { buildAccountMeetingReason } from "@/lib/accountMeetingReason";
 
 const NOW = Date.parse("2026-06-28T12:00:00.000Z");
 
@@ -160,6 +161,21 @@ export const demoMatches: AccountMatch[] = MATCH_SPECS.map((spec, i) => {
     jedunn: { contactName: "David Chen", contactTitle: "VP Safety" },
   };
   const contact = contacts[spec.key];
+  const meetingReason = buildAccountMeetingReason({
+    eventName: "World of Concrete 2026",
+    sellerName: "SafeSite OS",
+    buyerTitles: demoRevenueProfile.buyerTitles,
+    companyName: spec.name,
+    domain: spec.domain,
+    tier: spec.tier,
+    role: spec.role,
+    boothOrSession: spec.booth,
+    matchedOppValue: spec.opp,
+    contactName: contact?.contactName,
+    contactTitle: contact?.contactTitle,
+    evidenceQuote: roleQuote(spec),
+    presence: "confirmed",
+  });
   return {
     _id: `demo_match_${spec.key}`,
     eventId: ATTEND_EVENT_ID,
@@ -178,6 +194,7 @@ export const demoMatches: AccountMatch[] = MATCH_SPECS.map((spec, i) => {
     presence: "confirmed" as const,
     contactName: contact?.contactName,
     contactTitle: contact?.contactTitle,
+    meetingReason,
     createdAt: NOW - 3200000,
   };
 });

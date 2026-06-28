@@ -91,6 +91,7 @@ export const listAccountMatchesByEvent = query({
       matchedOppValue: v.optional(v.number()),
       eventCompanyId: v.optional(v.id("eventCompany")),
       rank: v.optional(v.number()),
+      meetingReason: v.optional(v.string()),
       createdAt: v.number(),
     }),
   ),
@@ -226,6 +227,30 @@ export const listContactsByEvent = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("contact")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+  },
+});
+
+export const listOutreachDraftsByEvent = query({
+  args: { eventId: v.id("event") },
+  returns: v.array(
+    v.object({
+      _id: v.id("outreachDraft"),
+      _creationTime: v.number(),
+      accountMatchId: v.id("accountMatch"),
+      contactId: v.optional(v.id("contact")),
+      eventId: v.id("event"),
+      subject: v.string(),
+      body: v.string(),
+      tone: v.optional(v.string()),
+      rawAiJson: v.optional(v.string()),
+      createdAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("outreachDraft")
       .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
       .collect();
   },

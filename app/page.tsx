@@ -5,6 +5,7 @@ import { useAction } from "convex/react";
 import {
   AlertTriangle,
   CalendarDays,
+  CheckCircle2,
   ExternalLink,
   FileSearch,
   LayoutGrid,
@@ -263,6 +264,8 @@ export default function Home() {
           contacts={bundle?.contacts ?? []}
           outreachDrafts={bundle?.outreachDrafts ?? []}
           eventName={bundle?.event.name}
+          sellerName={bundle?.revenueProfile.name}
+          buyerTitles={bundle?.revenueProfile.buyerTitles}
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
         />
@@ -454,7 +457,7 @@ function SourcesPanel({
     <div className="space-y-3">
       <p className="max-w-2xl text-sm text-muted-foreground">
         Every page Schrute read while researching this event. Companies and
-        attendees are cited back to these sources.
+        public people signals are cited back to these sources.
       </p>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         {sources.map((s) => (
@@ -571,6 +574,16 @@ function ResultsView({
           className="animate-in fade-in duration-300 motion-reduce:animate-none space-y-6"
         >
           {score ? (
+            <DecisionCommandStrip
+              event={event}
+              score={score}
+              matches={matches}
+              contacts={contacts}
+              outreachDrafts={outreachDrafts}
+            />
+          ) : null}
+
+          {score ? (
             <OutcomeWheel
               event={event}
               score={score}
@@ -603,9 +616,20 @@ function ResultsView({
 
           <div id="accounts-board" className="grid min-w-0 gap-6 scroll-mt-24 lg:grid-cols-3">
             <div className="min-w-0 lg:col-span-2">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Your accounts on the floor
-              </h2>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    Account presence board
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Company presence from public event evidence. No personal
+                    attendance claims unless a source proves it.
+                  </p>
+                </div>
+                <span className="rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                  {matches.length} enrichment-ready matches
+                </span>
+              </div>
               <AccountBoard
                 matches={matches}
                 contacts={contacts}
@@ -662,6 +686,92 @@ function ResultsView({
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function DecisionCommandStrip({
+  event,
+  score,
+  matches,
+  contacts,
+  outreachDrafts,
+}: {
+  event: EventBundle["event"];
+  score: EventBundle["score"];
+  matches: AccountMatch[];
+  contacts: EventBundle["contacts"];
+  outreachDrafts: EventBundle["outreachDrafts"];
+}) {
+  if (!score) return null;
+
+  const tier1Count = matches.filter((m) => m.tier === "tier1_crm").length;
+  const openOppCount = matches.filter((m) => m.matchedOppValue).length;
+  const evidenceCount = matches.reduce((sum, m) => sum + m.evidence.length, 0);
+
+  const metrics = [
+    {
+      label: "Presence",
+      value: matches.length,
+      hint: `${tier1Count} Tier-1 CRM accounts`,
+    },
+    {
+      label: "Open pipeline",
+      value: formatCurrency(score.matchedPipelineValue, { compact: true }),
+      hint: `${openOppCount} open opp${openOppCount === 1 ? "" : "s"}`,
+    },
+    {
+      label: "Break-even",
+      value: score.requiredQualifiedMeetings,
+      hint: "qualified meetings",
+    },
+    {
+      label: "Sponsor cap",
+      value: formatCurrency(score.sponsorCap, { compact: true }),
+      hint: event.sponsorQuote
+        ? `${formatCurrency(event.sponsorQuote, { compact: true })} quote`
+        : "max worth paying",
+    },
+    {
+      label: "Worklist",
+      value: outreachDrafts.length || contacts.length,
+      hint: outreachDrafts.length ? "meeting drafts" : "contacts ready",
+    },
+  ];
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="border-b border-border bg-primary px-4 py-3 text-primary-foreground sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide opacity-70">
+              Event underwriting room
+            </p>
+            <h2 className="mt-1 text-base font-semibold leading-tight sm:text-lg">
+              {score.recommendation === "skip"
+                ? "Skip the booth, preserve the evidence, and move budget elsewhere."
+                : `Attend, work the ${matches.length}-account list, and keep sponsorship under cap.`}
+            </h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1 text-xs font-medium">
+            <CheckCircle2 className="size-3.5" />
+            {evidenceCount} cited evidence points
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-5 sm:divide-y-0">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="min-h-24 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {metric.label}
+            </p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+              {metric.value}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{metric.hint}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
