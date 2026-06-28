@@ -9,7 +9,25 @@
  */
 
 import type * as contracts from "../contracts.js";
+import type * as events from "../events.js";
+import type * as ingest from "../ingest.js";
+import type * as lib_csvParse from "../lib/csvParse.js";
+import type * as lib_defaults from "../lib/defaults.js";
+import type * as lib_demoSeed from "../lib/demoSeed.js";
+import type * as lib_extractHeuristic from "../lib/extractHeuristic.js";
+import type * as lib_jobs from "../lib/jobs.js";
+import type * as lib_matching from "../lib/matching.js";
+import type * as lib_normalize from "../lib/normalize.js";
+import type * as lib_openai from "../lib/openai.js";
+import type * as lib_profileHeuristic from "../lib/profileHeuristic.js";
+import type * as lib_underwriting from "../lib/underwriting.js";
 import type * as lib_validators from "../lib/validators.js";
+import type * as matcher from "../matcher.js";
+import type * as memo from "../memo.js";
+import type * as orchestrate from "../orchestrate.js";
+import type * as pipeline from "../pipeline.js";
+import type * as profile from "../profile.js";
+import type * as underwrite from "../underwrite.js";
 
 import type {
   ApiFromModules,
@@ -19,7 +37,25 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   contracts: typeof contracts;
+  events: typeof events;
+  ingest: typeof ingest;
+  "lib/csvParse": typeof lib_csvParse;
+  "lib/defaults": typeof lib_defaults;
+  "lib/demoSeed": typeof lib_demoSeed;
+  "lib/extractHeuristic": typeof lib_extractHeuristic;
+  "lib/jobs": typeof lib_jobs;
+  "lib/matching": typeof lib_matching;
+  "lib/normalize": typeof lib_normalize;
+  "lib/openai": typeof lib_openai;
+  "lib/profileHeuristic": typeof lib_profileHeuristic;
+  "lib/underwriting": typeof lib_underwriting;
   "lib/validators": typeof lib_validators;
+  matcher: typeof matcher;
+  memo: typeof memo;
+  orchestrate: typeof orchestrate;
+  pipeline: typeof pipeline;
+  profile: typeof profile;
+  underwrite: typeof underwrite;
 }>;
 
 /**
