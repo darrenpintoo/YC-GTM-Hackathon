@@ -9,6 +9,7 @@
  */
 
 import type * as contracts from "../contracts.js";
+import type * as debug from "../debug.js";
 import type * as events from "../events.js";
 import type * as ingest from "../ingest.js";
 import type * as lib_csvParse from "../lib/csvParse.js";
@@ -37,6 +38,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   contracts: typeof contracts;
+  debug: typeof debug;
   events: typeof events;
   ingest: typeof ingest;
   "lib/csvParse": typeof lib_csvParse;

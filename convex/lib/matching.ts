@@ -1,15 +1,20 @@
-import { fuzzyNameScore, normalizeCompanyName, normalizeDomain } from "./normalize";
+import {
+  domainMatchesCompanyName,
+  fuzzyNameScore,
+  normalizeCompanyName,
+  normalizeDomain,
+} from "./normalize";
 
 const DOMAIN_HINTS: Record<string, string> = {
   "turner construction": "turnerconstruction.com",
-  "skanska usa": "usa.skanska.com",
+  skanska: "usa.skanska.com",
   "clark construction": "clarkconstruction.com",
   mortenson: "mortenson.com",
-  "the haskell company": "haskell.com",
-  "brasfield & gorrie": "brasfieldgorrie.com",
+  haskell: "haskell.com",
+  "brasfield gorrie": "brasfieldgorrie.com",
   gilbane: "gilbaneco.com",
   "suffolk construction": "suffolk.com",
-  "mccarthy building": "mccarthy.com",
+  mccarthy: "mccarthy.com",
   kiewit: "kiewit.com",
   "buildright materials": "buildrightmaterials.com",
 };
@@ -108,6 +113,7 @@ export function matchAccounts(
 
     const tier1 = findTier1Match(company, crmAccounts, domain);
     if (tier1) {
+      if (matchedCrmIds.has(tier1.crm._id)) continue;
       matchedCrmIds.add(tier1.crm._id);
       matches.push(buildMatch(company, tier1.crm, tier1.confidence, tier1.fitScore));
       continue;
@@ -162,10 +168,13 @@ function findTier1Match(
     null;
 
   for (const crm of crmAccounts) {
-    const nameScore = fuzzyNameScore(company.companyName, crm.companyName);
+    const nameScore = Math.max(
+      fuzzyNameScore(company.companyName, crm.companyName),
+      domainMatchesCompanyName(crm.domain, company.companyName) ? 0.9 : 0,
+    );
     if (nameScore < 0.6) continue;
 
-    const confidence = Math.min(0.85, company.confidence * nameScore);
+    const confidence = Math.min(0.9, company.confidence * (0.65 + nameScore * 0.35));
     const fitScore = accountTypeFitScore(crm.accountType) * (0.85 + nameScore * 0.15);
 
     if (!best || fitScore > best.fitScore) {
@@ -197,7 +206,7 @@ function scoreIcpFit(
   profile: RevenueProfileLite,
 ): number {
   const haystack = companyName.toLowerCase();
-  let score = 0.55;
+  let score = 0.42;
 
   for (const industry of profile.industries) {
     const token = industry.toLowerCase().split(" ")[0];
@@ -207,7 +216,14 @@ function scoreIcpFit(
   }
 
   for (const keyword of profile.keywords) {
-    if (haystack.includes(keyword.toLowerCase())) {
+    const keywordTokens = keyword
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((token) => token.length >= 5);
+    if (
+      haystack.includes(keyword.toLowerCase()) ||
+      keywordTokens.some((token) => haystack.includes(token))
+    ) {
       score += 0.05;
     }
   }
