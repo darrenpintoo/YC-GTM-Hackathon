@@ -1,104 +1,308 @@
 "use client";
 
-import { useAction, useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
-import { useState } from "react";
+import * as React from "react";
+import { useAction } from "convex/react";
+import { CalendarDays, MapPin, Radar, RotateCcw, Ticket } from "lucide-react";
+import { toast } from "sonner";
+
+import { api } from "@/convex/_generated/api";
+import { AccountBoard } from "@/components/schrute/AccountBoard";
+import { AccountDrawer } from "@/components/schrute/AccountDrawer";
+import { AppHeader } from "@/components/schrute/AppHeader";
+import { ExportBar } from "@/components/schrute/ExportBar";
+import { JobProgress } from "@/components/schrute/JobProgress";
+import { RevenueProfilePanel } from "@/components/schrute/RevenueProfilePanel";
+import { UploadIntro, type IntroPayload } from "@/components/schrute/UploadIntro";
+import { VerdictMemo } from "@/components/schrute/VerdictMemo";
+import { FailedState } from "@/components/schrute/atoms";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  USE_MOCKS,
+  useEventBundle,
+  type EventBundle,
+} from "@/lib/data/useEventBundle";
+import type { AccountMatch, Job, JobStep } from "@/lib/types";
+import { formatCurrency } from "@/lib/utils";
+
+type Phase = "intro" | "running" | "results";
+
+const SIM_STEPS: { step: JobStep; message: string }[] = [
+  { step: "ingest", message: "Cached exhibitor snapshot loaded" },
+  { step: "extract", message: "142 exhibitors parsed" },
+  { step: "match", message: "Matching against your CRM…" },
+  { step: "score", message: "Underwriting break-even" },
+  { step: "memo", message: "Drafting the memo" },
+];
 
 export default function Home() {
   const seedDemo = useAction(api.orchestrate.seedDemo);
-  const demoEvent = useQuery(api.events.getBySlug, {
-    slug: "world-of-concrete-2026",
-  });
-  const matches = useQuery(
-    api.contracts.listAccountMatchesByEvent,
-    demoEvent ? { eventId: demoEvent._id } : "skip",
-  );
-  const score = useQuery(
-    api.contracts.getEventScore,
-    demoEvent ? { eventId: demoEvent._id } : "skip",
-  );
-  const memo = useQuery(
-    api.contracts.getDecisionMemo,
-    demoEvent ? { eventId: demoEvent._id } : "skip",
-  );
+  const { bundle, isLoading, hasResults } = useEventBundle();
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = React.useState<Phase>("intro");
+  const [simJobs, setSimJobs] = React.useState<Job[]>([]);
+  const [selected, setSelected] = React.useState<AccountMatch | null>(null);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function handleSeedDemo() {
-    setLoading(true);
+  React.useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
+
+  // Live mode: once Convex has scored the event, reveal the board.
+  React.useEffect(() => {
+    if (!USE_MOCKS && phase === "running" && hasResults) {
+      setPhase("results");
+    }
+  }, [phase, hasResults]);
+
+  function runMockSimulation(eventId: string) {
+    let i = 0;
+    const tick = () => {
+      const jobs: Job[] = SIM_STEPS.map((s, idx) => ({
+        _id: `sim_${s.step}`,
+        eventId,
+        step: s.step,
+        status: idx < i ? "completed" : idx === i ? "running" : "pending",
+        message: idx <= i ? s.message : undefined,
+        progress: idx < i ? 100 : idx === i ? 55 : 0,
+        updatedAt: Date.now(),
+      }));
+      jobs.push({
+        _id: "sim_enrich",
+        eventId,
+        step: "enrich",
+        status: i >= SIM_STEPS.length ? "running" : "pending",
+        message: i >= SIM_STEPS.length ? "Fiber enrichment (sidecar)" : undefined,
+        progress: i >= SIM_STEPS.length ? 40 : 0,
+        updatedAt: Date.now(),
+      });
+      setSimJobs(jobs);
+      i += 1;
+      if (i <= SIM_STEPS.length) {
+        timer.current = setTimeout(tick, 750);
+      } else {
+        timer.current = setTimeout(() => setPhase("results"), 650);
+      }
+    };
+    tick();
+  }
+
+  async function handleRun(payload: IntroPayload) {
     setError(null);
+    setPhase("running");
+    setSimJobs([]);
+    toast(`Reading ${payload.eventName} against ${payload.companyCount} accounts…`);
+
+    if (USE_MOCKS) {
+      runMockSimulation(bundle?.event._id ?? "mock_event");
+      return;
+    }
+
     try {
       await seedDemo({});
+      toast.success("Pipeline complete");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "seedDemo failed");
-    } finally {
-      setLoading(false);
+      const message = err instanceof Error ? err.message : "Run failed";
+      setError(message);
+      toast.error(message);
+      setPhase("intro");
     }
   }
 
+  function reset() {
+    if (timer.current) clearTimeout(timer.current);
+    setPhase("intro");
+    setSimJobs([]);
+    setSelected(null);
+    setDrawerOpen(false);
+  }
+
+  function openMatch(match: AccountMatch) {
+    setSelected(match);
+    setDrawerOpen(true);
+  }
+
+  const liveJobs = bundle?.jobs ?? [];
+  const jobsForRunning = USE_MOCKS ? simJobs : liveJobs;
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
+    <div className="min-h-screen">
+      <AppHeader />
+
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        {error ? (
+          <div className="mb-6">
+            <FailedState title="Pipeline failed" description={error} />
+          </div>
+        ) : null}
+
+        {phase === "intro" ? (
+          <UploadIntro running={false} onRun={handleRun} />
+        ) : null}
+
+        {phase === "running" ? (
+          <RunningView bundle={bundle} jobs={jobsForRunning} loading={isLoading} />
+        ) : null}
+
+        {phase === "results" && bundle ? (
+          <ResultsView
+            bundle={bundle}
+            selectedId={selected?._id ?? null}
+            onSelect={openMatch}
+            onReset={reset}
+          />
+        ) : null}
+      </main>
+
+      <AccountDrawer
+        match={selected}
+        contacts={bundle?.contacts ?? []}
+        outreachDrafts={bundle?.outreachDrafts ?? []}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+      />
+    </div>
+  );
+}
+
+function RunningView({
+  bundle,
+  jobs,
+  loading,
+}: {
+  bundle: EventBundle | null;
+  jobs: Job[];
+  loading: boolean;
+}) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Schrute</h1>
-        <p className="mt-2 text-neutral-600 dark:text-neutral-400">
-          Confirmed account presence → underwriting verdict → outreach sidecar.
-        </p>
+        {bundle ? (
+          <RevenueProfilePanel
+            profile={bundle.revenueProfile}
+            accounts={bundle.crmAccounts}
+          />
+        ) : (
+          <Skeleton className="h-80 w-full rounded-xl" />
+        )}
       </div>
-
-      <button
-        type="button"
-        onClick={handleSeedDemo}
-        disabled={loading}
-        className="w-fit rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900"
-      >
-        {loading ? "Running core spine…" : "Run demo seed (SafeSite × WoC)"}
-      </button>
-
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-      {demoEvent ? (
-        <section className="space-y-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <h2 className="text-lg font-semibold">{demoEvent.name}</h2>
-          {score ? (
-            <p className="text-sm">
-              <span className="font-medium">Verdict:</span> {score.recommendation}{" "}
-              · {score.tier1MatchCount} Tier-1 matches ·{" "}
-              {score.requiredQualifiedMeetings} meetings to break even
-            </p>
-          ) : null}
-          {memo ? (
-            <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-              {memo.headline}
-            </p>
-          ) : null}
-          {matches && matches.length > 0 ? (
-            <ul className="space-y-2 text-sm">
-              {matches.map((match) => (
-                <li
-                  key={match._id}
-                  className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-900"
-                >
-                  <span className="font-medium">{match.companyName}</span>{" "}
-                  <span className="text-neutral-500">
-                    ({match.tier}) · fit {Math.round(match.fitScore * 100)}% ·
-                    conf {Math.round(match.confidence * 100)}%
-                  </span>
-                  {match.boothOrSession ? (
-                    <span className="block text-neutral-600 dark:text-neutral-400">
-                      {match.boothOrSession} — &quot;{match.evidence[0]?.quote}&quot;
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Radar className="size-4 animate-pulse text-primary" />
+            Reading the floor…
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Matching public event evidence against your pipeline.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {loading && jobs.length === 0 ? (
+            <Skeleton className="h-48 w-full rounded-lg" />
           ) : (
-            <p className="text-sm text-neutral-500">
-              No live matches yet. Run the demo seed above.
-            </p>
+            <JobProgress jobs={jobs} />
           )}
-        </section>
-      ) : null}
-    </main>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ResultsView({
+  bundle,
+  selectedId,
+  onSelect,
+  onReset,
+}: {
+  bundle: EventBundle;
+  selectedId: string | null;
+  onSelect: (m: AccountMatch) => void;
+  onReset: () => void;
+}) {
+  const { event, matches, score, memo, contacts, outreachDrafts } = bundle;
+
+  return (
+    <div className="space-y-6">
+      <EventHeader event={event} onReset={onReset} />
+
+      <ExportBar
+        event={event}
+        matches={matches}
+        contacts={contacts}
+        outreachDrafts={outreachDrafts}
+      />
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Your accounts on the floor
+          </h2>
+          <AccountBoard
+            matches={matches}
+            contacts={contacts}
+            selectedId={selectedId}
+            onSelect={onSelect}
+          />
+        </div>
+
+        <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
+          <VerdictMemo score={score} memo={memo} />
+          <RevenueProfilePanel
+            profile={bundle.revenueProfile}
+            accounts={bundle.crmAccounts}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventHeader({
+  event,
+  onReset,
+}: {
+  event: EventBundle["event"];
+  onReset: () => void;
+}) {
+  const dates =
+    event.startDate && event.endDate
+      ? `${event.startDate} → ${event.endDate}`
+      : (event.startDate ?? "");
+
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{event.name}</h1>
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          {dates ? (
+            <span className="flex items-center gap-1.5">
+              <CalendarDays className="size-3.5" />
+              {dates}
+            </span>
+          ) : null}
+          {event.location ? (
+            <span className="flex items-center gap-1.5">
+              <MapPin className="size-3.5" />
+              {event.location}
+            </span>
+          ) : null}
+          {event.sponsorQuote ? (
+            <span className="flex items-center gap-1.5">
+              <Ticket className="size-3.5" />
+              {formatCurrency(event.sponsorQuote)} sponsor quote
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <Button variant="outline" size="sm" onClick={onReset}>
+        <RotateCcw className="size-4" />
+        New run
+      </Button>
+    </div>
   );
 }
