@@ -1,0 +1,16 @@
+company_name,domain,account_type,stage,deal_size,industry,region,buyer_title,open_opp_value
+Amazon Robotics,amazonrobotics.com,open_opp,Negotiation,220000,Warehouse Automation,US Northeast,Director of EHS,220000
+Boston Dynamics,bostondynamics.com,open_opp,Proposal,185000,Robotics,US Northeast,VP Operations,185000
+ABB Robotics,new.abb.com,open_opp,Discovery,160000,Industrial Automation,US Midwest,Director of Safety,160000
+FANUC America,fanucamerica.com,open_opp,Discovery,140000,Industrial Automation,US Midwest,Plant Safety Manager,140000
+KUKA Robotics,kuka.com,open_opp,Proposal,125000,Industrial Automation,US South,Director of EHS,125000
+Universal Robots,universal-robots.com,closed_won,Closed Won,95000,Collaborative Robotics,US Northeast,VP Operations,
+NVIDIA Robotics,nvidia.com,target,Target,200000,AI & Robotics,US West,Director of Field Ops,
+Toyota Material Handling,toyotaforklift.com,target,Target,110000,Material Handling,US South,VP Safety,
+Locus Robotics,locusrobotics.com,closed_won,Closed Won,78000,Warehouse Automation,US Northeast,Safety Manager,
+Fetch Robotics,zebra.com,closed_won,Closed Won,72000,Autonomous Mobile Robots,US West,Director of EHS,
+Symbotic,symbotic.com,target,Target,135000,Warehouse Automation,US Northeast,VP Operations,
+GreyOrange,greyorange.com,target,Target,98000,Fulfillment Robotics,US West,Director of Safety,
+MiR Mobile Industrial Robots,mobile-industrial-robots.com,open_opp,Discovery,88000,AMR,US Midwest,Plant Safety Manager,88000
+Clearpath Robotics,clearpath.ai,target,Target,92000,Research Robotics,US Northeast,Director of EHS,
+Omron Automation,omron.com,closed_won,Closed Won,68000,Industrial Automation,US Midwest,VP Safety,

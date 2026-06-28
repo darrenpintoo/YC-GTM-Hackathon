@@ -59,7 +59,14 @@ export async function initCoreJobs(
   ctx: MutationCtx,
   eventId: Id<"event">,
 ): Promise<void> {
-  const steps: JobStep[] = ["ingest", "extract", "match", "score", "memo"];
+  const steps: JobStep[] = [
+    "ingest",
+    "extract",
+    "match",
+    "score",
+    "memo",
+    "enrich",
+  ];
   for (const step of steps) {
     await upsertJob(ctx, eventId, step, {
       status: "pending",

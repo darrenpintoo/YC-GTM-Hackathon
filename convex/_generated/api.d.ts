@@ -9,6 +9,7 @@
  */
 
 import type * as contracts from "../contracts.js";
+import type * as enrich from "../enrich.js";
 import type * as events from "../events.js";
 import type * as ingest from "../ingest.js";
 import type * as lib_csvParse from "../lib/csvParse.js";
@@ -16,6 +17,8 @@ import type * as lib_defaults from "../lib/defaults.js";
 import type * as lib_demoSeed from "../lib/demoSeed.js";
 import type * as lib_extractHeuristic from "../lib/extractHeuristic.js";
 import type * as lib_fetchSource from "../lib/fetchSource.js";
+import type * as lib_fiber from "../lib/fiber.js";
+import type * as lib_firecrawl from "../lib/firecrawl.js";
 import type * as lib_jobs from "../lib/jobs.js";
 import type * as lib_matching from "../lib/matching.js";
 import type * as lib_normalize from "../lib/normalize.js";
@@ -29,6 +32,7 @@ import type * as memo from "../memo.js";
 import type * as orchestrate from "../orchestrate.js";
 import type * as pipeline from "../pipeline.js";
 import type * as profile from "../profile.js";
+import type * as research from "../research.js";
 import type * as underwrite from "../underwrite.js";
 
 import type {
@@ -39,6 +43,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   contracts: typeof contracts;
+  enrich: typeof enrich;
   events: typeof events;
   ingest: typeof ingest;
   "lib/csvParse": typeof lib_csvParse;
@@ -46,6 +51,8 @@ declare const fullApi: ApiFromModules<{
   "lib/demoSeed": typeof lib_demoSeed;
   "lib/extractHeuristic": typeof lib_extractHeuristic;
   "lib/fetchSource": typeof lib_fetchSource;
+  "lib/fiber": typeof lib_fiber;
+  "lib/firecrawl": typeof lib_firecrawl;
   "lib/jobs": typeof lib_jobs;
   "lib/matching": typeof lib_matching;
   "lib/normalize": typeof lib_normalize;
@@ -59,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   orchestrate: typeof orchestrate;
   pipeline: typeof pipeline;
   profile: typeof profile;
+  research: typeof research;
   underwrite: typeof underwrite;
 }>;
 

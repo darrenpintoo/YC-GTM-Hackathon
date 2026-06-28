@@ -16,7 +16,7 @@ type DataModeContextValue = {
 const DataModeContext = React.createContext<DataModeContextValue | null>(null);
 
 const INITIAL_MODE: DataMode =
-  process.env.NEXT_PUBLIC_USE_MOCKS === "false" ? "live" : "mock";
+  process.env.NEXT_PUBLIC_USE_MOCKS === "true" ? "mock" : "live";
 
 export function DataModeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = React.useState<DataMode>(INITIAL_MODE);

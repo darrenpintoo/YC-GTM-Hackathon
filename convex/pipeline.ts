@@ -17,7 +17,12 @@ type PipelineResult = {
   decisionMemoId: Id<"decisionMemo">;
 };
 
+export type FullPipelineResult = PipelineResult & {
+  sourceCount: number;
+};
+
 const MAX_SOURCE_CHARS = 16000;
+const MAX_DOCS_TO_EXTRACT = 50;
 
 const runIntentValidator = v.optional(
   v.object({
@@ -28,29 +33,53 @@ const runIntentValidator = v.optional(
 );
 
 /**
- * Core Schrute pipeline. Uses OpenAI (gpt-4o-mini, structured outputs) for
- * extraction and the go/no-go memo when OPENAI_API_KEY is set on the Convex
- * deployment, and falls back to the deterministic heuristics otherwise — so a
- * missing key or a transient API error never breaks a run.
+ * Full Schrute pipeline (streaming-friendly). Each stage writes a reactive job
+ * row, so the UI can follow ingest -> extract -> match -> score -> memo live.
+ *
+ * - ingest:  Firecrawl scrape of the event source (plain fetch / snapshot fallback)
+ * - extract: OpenAI structured extraction (heuristic fallback)
+ * - match:   deterministic CRM/ICP matching
+ * - score:   deterministic break-even underwriting
+ * - memo:    OpenAI go/no-go memo (heuristic fallback)
+ * - enrich:  scheduled sidecar (web-search attendees + Fiber contacts)
+ *
+ * A missing key or transient API error never breaks a run.
  */
-export const runPipelineInternal = internalAction({
+export const runFullPipeline = internalAction({
   args: {
     eventId: v.id("event"),
-    sourceDocumentId: v.id("sourceDocument"),
+    eventName: v.string(),
+    eventSource: v.string(),
     runIntent: runIntentValidator,
   },
   returns: v.object({
     matchCount: v.number(),
     eventScoreId: v.id("eventScore"),
     decisionMemoId: v.id("decisionMemo"),
+    sourceCount: v.number(),
   }),
-  handler: async (ctx, args): Promise<PipelineResult> => {
-    // 1. Extract companies — AI first, heuristic fallback.
-    const aiExtracted = await runAiExtraction(ctx, args);
-    if (!aiExtracted) {
-      await ctx.runMutation(internal.ingest.extractFromSource, {
+  handler: async (ctx, args): Promise<FullPipelineResult> => {
+    // 0. Gather sources — deep research across the event site + open web.
+    await ctx.runMutation(internal.ingest.startIngest, {
+      eventId: args.eventId,
+      message: "Starting deep research…",
+    });
+
+    const gathered = await ctx.runAction(internal.research.gather, {
+      eventId: args.eventId,
+      eventName: args.eventName,
+      eventSource: args.eventSource,
+    });
+
+    // 1. Extract companies across ALL gathered sources — AI first, heuristic
+    // fallback per document.
+    await ctx.runMutation(internal.ingest.markExtractRunning, {
+      eventId: args.eventId,
+    });
+    const extracted = await runMultiDocExtraction(ctx, args.eventId);
+    if (!extracted) {
+      await ctx.runMutation(internal.ingest.extractAllHeuristic, {
         eventId: args.eventId,
-        sourceDocumentId: args.sourceDocumentId,
       });
     }
 
@@ -66,44 +95,119 @@ export const runPipelineInternal = internalAction({
     );
 
     // 4. Decision memo — AI first, heuristic fallback.
-    let decisionMemoId = await runAiMemo(ctx, args.eventId, args.runIntent);
-    if (!decisionMemoId) {
-      decisionMemoId = await ctx.runMutation(internal.memo.generate, {
+    const aiMemoId = await runAiMemo(ctx, args.eventId, args.runIntent);
+    const decisionMemoId: Id<"decisionMemo"> =
+      aiMemoId ??
+      (await ctx.runMutation(internal.memo.generate, {
         eventId: args.eventId,
-      });
-    }
+      }));
 
-    return { matchCount, eventScoreId, decisionMemoId };
+    // 5. Enrichment sidecar — runs in the background so results show now and
+    // the People tab fills in reactively as web search + Fiber complete.
+    await ctx.scheduler.runAfter(0, internal.enrich.run, {
+      eventId: args.eventId,
+      runIntent: args.runIntent,
+    });
+
+    return {
+      matchCount,
+      eventScoreId,
+      decisionMemoId,
+      sourceCount: gathered.sourceCount,
+    };
   },
 });
 
-async function runAiExtraction(
+/**
+ * Extract companies from every gathered source document, attributing each to
+ * its page so citations resolve correctly. Returns true if any company found.
+ */
+async function runMultiDocExtraction(
   ctx: ActionCtx,
-  args: { eventId: Id<"event">; sourceDocumentId: Id<"sourceDocument"> },
+  eventId: Id<"event">,
 ): Promise<boolean> {
   try {
-    const source = await ctx.runQuery(internal.ingest.getSource, {
-      sourceDocumentId: args.sourceDocumentId,
+    const docs = await ctx.runQuery(internal.ingest.listSourcesForExtraction, {
+      eventId,
     });
-    if (!source?.textContent) return false;
+    if (docs.length === 0) return false;
 
-    const ai = await callOpenAiJson<EventExtractionOutput>({
-      system: `${AI_GUARDRAILS}\nExtract every company that the source proves is present at the event (exhibitor, sponsor, or speaker). For each, copy a verbatim quote from the source as proof. Use "unknown" for any field not in the source.`,
-      user: `Source document text:\n\n${source.textContent.slice(0, MAX_SOURCE_CHARS)}`,
-      responseSchema: eventExtractionSchema,
-    });
+    const companies: Array<{
+      sourceDocumentId: Id<"sourceDocument">;
+      companyName: string;
+      role: string;
+      boothOrSession: string;
+      quote: string;
+      confidence: number;
+      presence: "confirmed" | "recurring";
+      editionLabel?: string;
+    }> = [];
+    const facts: Array<{
+      sourceDocumentId: Id<"sourceDocument">;
+      factType: string;
+      label: string;
+      value: string;
+      quote: string;
+      confidence: number;
+    }> = [];
 
-    if (!ai || !ai.companies || ai.companies.length === 0) return false;
+    const usableDocs = docs
+      .slice(0, MAX_DOCS_TO_EXTRACT)
+      .filter((d) => d.textContent && d.textContent.length >= 80);
+
+    // Extract across documents in parallel (bounded concurrency), streaming a
+    // progress count as each chunk lands. OpenAI calls dominate latency here.
+    const concurrency = 12;
+    let processed = 0;
+    for (let i = 0; i < usableDocs.length; i += concurrency) {
+      const chunk = usableDocs.slice(i, i + concurrency);
+      const results = await Promise.all(
+        chunk.map((doc) =>
+          callOpenAiJson<EventExtractionOutput>({
+            system: `${AI_GUARDRAILS}\nExtract every company that the source proves is present at the event (exhibitor, sponsor, or speaker). For each, copy a verbatim quote from the source as proof. Use "unknown" for any field not in the source.`,
+            user: `Source document text:\n\n${doc.textContent.slice(0, MAX_SOURCE_CHARS)}`,
+            responseSchema: eventExtractionSchema,
+          }).then((ai) => ({ doc, ai })),
+        ),
+      );
+
+      for (const { doc, ai } of results) {
+        const presence: "confirmed" | "recurring" = doc.recurring
+          ? "recurring"
+          : "confirmed";
+        if (ai?.companies) {
+          for (const c of ai.companies) {
+            companies.push({
+              sourceDocumentId: doc._id,
+              presence,
+              editionLabel: doc.editionLabel ?? undefined,
+              ...c,
+            });
+          }
+        }
+        for (const f of ai?.facts ?? []) {
+          facts.push({ sourceDocumentId: doc._id, ...f });
+        }
+      }
+
+      processed += chunk.length;
+      await ctx.runMutation(internal.ingest.markExtractRunning, {
+        eventId,
+        message: `Reading sources ${processed}/${usableDocs.length}…`,
+        progress: Math.min(90, 10 + Math.round((processed / usableDocs.length) * 80)),
+      });
+    }
+
+    if (companies.length === 0) return false;
 
     await ctx.runMutation(internal.ingest.applyExtraction, {
-      eventId: args.eventId,
-      sourceDocumentId: args.sourceDocumentId,
-      companies: ai.companies,
-      facts: ai.facts ?? [],
+      eventId,
+      companies,
+      facts,
     });
     return true;
   } catch (err) {
-    console.error("AI extraction failed, falling back to heuristic", err);
+    console.error("Multi-doc AI extraction failed, falling back", err);
     return false;
   }
 }

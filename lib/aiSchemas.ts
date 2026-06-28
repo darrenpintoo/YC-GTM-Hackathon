@@ -209,6 +209,244 @@ export const outreachDraftSchema = {
   },
 } as const;
 
+/** Source URLs discovered for deep research (web_search tool). */
+export const sourceDiscoverySchema = {
+  name: "source_discovery",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["urls"],
+    properties: {
+      urls: {
+        type: "array",
+        description:
+          "Public pages that name companies present at the event (sponsor/exhibitor lists, partner announcements, press, program/speaker pages). Real URLs only.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["url", "category"],
+          properties: {
+            url: { type: "string" },
+            title: { type: "string" },
+            category: {
+              type: "string",
+              enum: [
+                "sponsors",
+                "exhibitors",
+                "speakers",
+                "program",
+                "news",
+                "event",
+                "other",
+              ],
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type SourceDiscoveryOutput = {
+  urls: Array<{ url: string; title?: string; category?: string }>;
+};
+
+/** Real event metadata pulled from the research corpus. */
+export const eventMetaSchema = {
+  name: "event_meta",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["location", "startDate", "endDate"],
+    properties: {
+      location: {
+        type: "string",
+        description: "City, venue, or country. Empty string if unknown.",
+      },
+      startDate: {
+        type: "string",
+        description: "ISO date YYYY-MM-DD of the first day, or empty string.",
+      },
+      endDate: {
+        type: "string",
+        description: "ISO date YYYY-MM-DD of the last day, or empty string.",
+      },
+    },
+  },
+} as const;
+
+export type EventMetaOutput = {
+  location: string;
+  startDate: string;
+  endDate: string;
+};
+
+/** Named speakers/keynotes extracted from gathered program/speaker pages. */
+export const speakerExtractionSchema = {
+  name: "speaker_extraction",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["speakers"],
+    properties: {
+      speakers: {
+        type: "array",
+        description:
+          "People named in the source as speakers, keynotes, panelists, or committee members. Real names from the text only.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["fullName", "quote"],
+          properties: {
+            fullName: { type: "string" },
+            title: { type: "string", description: "Role/title, or empty." },
+            companyName: {
+              type: "string",
+              description: "Affiliation/organization, or empty.",
+            },
+            quote: {
+              type: "string",
+              description: "Verbatim line from the source naming this person.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type SpeakerExtractionOutput = {
+  speakers: Array<{
+    fullName: string;
+    title?: string;
+    companyName?: string;
+    quote: string;
+  }>;
+};
+
+/**
+ * One short, grounded "why this person is a good match" line per attendee,
+ * keyed by index so we can map results back to the input list.
+ */
+export const attendeeReasonsSchema = {
+  name: "attendee_reasons",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["reasons"],
+    properties: {
+      reasons: {
+        type: "array",
+        description: "One entry per input person, referencing their index.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "reason"],
+          properties: {
+            index: {
+              type: "number",
+              description: "The 0-based index of the person in the input list.",
+            },
+            reason: {
+              type: "string",
+              description:
+                "One concise sentence on why this person is a good match for the seller, grounded in their role/company and the ICP. No invented facts.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type AttendeeReasonsOutput = {
+  reasons: Array<{ index: number; reason: string }>;
+};
+
+/** Prospective attendees surfaced from public web posts (web_search tool). */
+export const attendeeSearchSchema = {
+  name: "attendee_signals",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["people"],
+    properties: {
+      people: {
+        type: "array",
+        description:
+          "People who PUBLICLY posted/announced they are attending the event. Only include real, sourced signals — never guess.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "fullName",
+            "title",
+            "companyName",
+            "network",
+            "postQuote",
+            "confidence",
+          ],
+          properties: {
+            fullName: { type: "string" },
+            title: {
+              type: "string",
+              description: "Job title; 'unknown' if not stated.",
+            },
+            companyName: {
+              type: "string",
+              description: "Employer; prefer a company from the provided list.",
+            },
+            network: { type: "string", enum: ["linkedin", "x"] },
+            postQuote: {
+              type: "string",
+              description: "Verbatim snippet of their public post about attending.",
+            },
+            postedAt: {
+              type: "string",
+              description: "ISO date of the post if known, else empty string.",
+            },
+            profileUrl: {
+              type: "string",
+              description: "Public profile or post URL.",
+            },
+            sourceUrl: {
+              type: "string",
+              description: "URL of the page where the signal was found.",
+            },
+            confidence: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              description: "How explicit the attendance signal is.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type AttendeeSearchPerson = {
+  fullName: string;
+  title: string;
+  companyName: string;
+  network: "linkedin" | "x";
+  postQuote: string;
+  postedAt?: string;
+  profileUrl?: string;
+  sourceUrl?: string;
+  confidence: number;
+};
+
+export type AttendeeSearchOutput = {
+  people: AttendeeSearchPerson[];
+};
+
 export type RevenueProfileOutput = {
   industries: string[];
   buyerTitles: string[];

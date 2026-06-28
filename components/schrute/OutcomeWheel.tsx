@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 
 import { AttendeeList } from "@/components/schrute/AttendeeList";
-import { EvidenceChip, TierBadge, VerdictBadge } from "@/components/schrute/atoms";
+import {
+  EvidenceChip,
+  PresenceBadge,
+  TierBadge,
+  VerdictBadge,
+} from "@/components/schrute/atoms";
 import { ROLE_LABEL } from "@/lib/labels";
 import type { LikelyAttendee } from "@/lib/data/demoBundle";
 import type {
@@ -71,9 +76,13 @@ export function OutcomeWheel({
   const [expanded, setExpanded] = React.useState<SignalKey | null>(null);
 
   const verdict = memo?.verdict ?? score.recommendation;
-  const openOpps = matches.filter((m) => m.matchedOppValue);
-  const tier1 = matches.filter((m) => m.tier === "tier1_crm");
-  const tier2 = matches.filter((m) => m.tier === "tier2_icp");
+  // Confirmed this year vs likely-to-return (named only in a past edition).
+  const confirmed = matches.filter((m) => m.presence !== "recurring");
+  const recurring = matches.filter((m) => m.presence === "recurring");
+  const recurringCrm = recurring.filter((m) => m.tier === "tier1_crm");
+  const openOpps = confirmed.filter((m) => m.matchedOppValue);
+  const tier1 = confirmed.filter((m) => m.tier === "tier1_crm");
+  const tier2 = confirmed.filter((m) => m.tier === "tier2_icp");
 
   const sub = score.subScores ?? {};
   const known = clamp(sub.pipelinePresence ?? 0.6);
@@ -99,9 +108,12 @@ export function OutcomeWheel({
     {
       key: "accounts",
       icon: <Building2 className="size-4" />,
-      value: matches.length,
+      value: confirmed.length,
       label: "Accounts found",
-      sub: `Your companies at ${event.name}`,
+      sub:
+        recurring.length > 0
+          ? `Confirmed this year · ${recurring.length} more likely to return`
+          : `Your companies at ${event.name}`,
       color: "text-tier1",
     },
     {
@@ -162,6 +174,19 @@ export function OutcomeWheel({
           </div>
           <VerdictBadge verdict={verdict} className="text-sm" />
         </div>
+
+        {recurring.length > 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {confirmed.length} confirmed
+            </span>{" "}
+            at {event.name} this year ·{" "}
+            <span className="font-medium text-warning">
+              {recurring.length} likely to return
+            </span>{" "}
+            from past editions (upside, not counted in break-even).
+          </p>
+        ) : null}
 
         {/* Legend */}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
@@ -246,6 +271,7 @@ export function OutcomeWheel({
           matches={matches}
           tier1={tier1}
           tier2={tier2}
+          recurringCrm={recurringCrm}
           openOpps={openOpps}
           attendees={attendees}
           outreachDrafts={outreachDrafts}
@@ -468,6 +494,7 @@ function SignalPanel({
   matches,
   tier1,
   tier2,
+  recurringCrm,
   openOpps,
   attendees,
   outreachDrafts,
@@ -481,6 +508,7 @@ function SignalPanel({
   matches: AccountMatch[];
   tier1: AccountMatch[];
   tier2: AccountMatch[];
+  recurringCrm: AccountMatch[];
   openOpps: AccountMatch[];
   attendees: LikelyAttendee[];
   outreachDrafts: OutreachDraft[];
@@ -514,8 +542,21 @@ function SignalPanel({
         <MatchSignals matches={tier2} onOpenAccount={onOpenAccount} />
       ) : expanded === "footprint" ? (
         <MatchSignals matches={matches} onOpenAccount={onOpenAccount} />
-      ) : (
+      ) : tier1.length > 0 ? (
         <MatchSignals matches={tier1} onOpenAccount={onOpenAccount} />
+      ) : recurringCrm.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            None of your CRM accounts are confirmed on this year&apos;s floor yet — but
+            these attended past editions and are likely to return:
+          </p>
+          <MatchSignals matches={recurringCrm} onOpenAccount={onOpenAccount} />
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No CRM accounts matched yet. As more sources are gathered, confirmed and
+          likely-to-return accounts will appear here.
+        </p>
       )}
     </div>
   );
@@ -569,7 +610,14 @@ function MatchSignals({
         >
           <div className="flex items-start justify-between gap-2">
             <span className="text-sm font-semibold">{m.companyName}</span>
-            <TierBadge tier={m.tier} className="text-[10px]" />
+            <div className="flex shrink-0 items-center gap-1">
+              <PresenceBadge
+                presence={m.presence}
+                editionLabel={m.editionLabel}
+                className="text-[10px]"
+              />
+              <TierBadge tier={m.tier} className="text-[10px]" />
+            </div>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {ROLE_LABEL[m.role] ?? m.role}

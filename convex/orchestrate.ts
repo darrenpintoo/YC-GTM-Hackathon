@@ -7,21 +7,7 @@ import {
   DEMO_EVENT,
   DEMO_EXHIBITOR_SNAPSHOT,
 } from "./lib/demoSeed";
-import { resolveEventSourceText } from "./lib/fetchSource";
 import { slugify } from "./lib/slugify";
-
-type PipelineResult = {
-  matchCount: number;
-  eventScoreId: Id<"eventScore">;
-  decisionMemoId: Id<"decisionMemo">;
-};
-
-type RunIntroResult = PipelineResult & {
-  profileId: Id<"revenueProfile">;
-  eventId: Id<"event">;
-  sourceDocumentId: Id<"sourceDocument">;
-  slug: string;
-};
 
 const runIntentArgs = {
   objective: v.optional(v.string()),
@@ -29,151 +15,190 @@ const runIntentArgs = {
   repCount: v.optional(v.number()),
 };
 
-const runResultValidator = v.object({
+type RunIntent = {
+  objective?: string;
+  participationOptions?: string[];
+  repCount?: number;
+};
+
+type PreparedEvent = {
+  profileId: Id<"revenueProfile">;
+  eventId: Id<"event">;
+  slug: string;
+};
+
+type PipelineFullResult = {
+  matchCount: number;
+  eventScoreId: Id<"eventScore">;
+  decisionMemoId: Id<"decisionMemo">;
+  sourceCount: number;
+};
+
+type FullRunResult = PreparedEvent & {
+  matchCount: number;
+  eventScoreId: Id<"eventScore">;
+  decisionMemoId: Id<"decisionMemo">;
+  sourceCount: number;
+};
+
+const startResultValidator = v.object({
   profileId: v.id("revenueProfile"),
   eventId: v.id("event"),
-  sourceDocumentId: v.id("sourceDocument"),
+  slug: v.string(),
+});
+
+const fullResultValidator = v.object({
+  profileId: v.id("revenueProfile"),
+  eventId: v.id("event"),
+  sourceCount: v.number(),
   slug: v.string(),
   matchCount: v.number(),
   eventScoreId: v.id("eventScore"),
   decisionMemoId: v.id("decisionMemo"),
 });
 
-export const runCorePipeline = action({
-  args: {
-    eventId: v.id("event"),
-    sourceDocumentId: v.id("sourceDocument"),
-    runIntent: v.optional(
-      v.object({
-        objective: v.optional(v.string()),
-        participationOptions: v.optional(v.array(v.string())),
-        repCount: v.optional(v.number()),
-      }),
-    ),
-  },
-  returns: v.object({
-    matchCount: v.number(),
-    eventScoreId: v.id("eventScore"),
-    decisionMemoId: v.id("decisionMemo"),
-  }),
-  handler: async (ctx, args): Promise<PipelineResult> => {
-    return await ctx.runAction(internal.pipeline.runPipelineInternal, args);
+const introArgs = {
+  csvText: v.optional(v.string()),
+  eventName: v.string(),
+  eventSource: v.string(),
+  sponsorQuote: v.optional(v.number()),
+  profileName: v.optional(v.string()),
+  ...runIntentArgs,
+};
+
+/**
+ * Streaming entry point for the live UI: create the profile + event fast,
+ * return the slug immediately, and run the heavy pipeline in the background so
+ * the client can watch job rows stream in via `listJobsByEvent`.
+ */
+export const startRun = action({
+  args: introArgs,
+  returns: startResultValidator,
+  handler: async (ctx, args): Promise<PreparedEvent> => {
+    const prepared = await prepareEvent(ctx, args);
+
+    await ctx.scheduler.runAfter(0, internal.pipeline.runFullPipeline, {
+      eventId: prepared.eventId,
+      eventName: args.eventName.trim() || DEMO_EVENT.name,
+      eventSource: args.eventSource.trim(),
+      runIntent: buildIntent(args),
+    });
+
+    return prepared;
   },
 });
 
-/** Run the full pipeline from landing-page inputs (CSV + event source + intent). */
+/** Synchronous run (back-compat): awaits the full pipeline before returning. */
 export const runFromIntro = action({
-  args: {
-    csvText: v.optional(v.string()),
-    eventName: v.string(),
-    eventSource: v.string(),
-    sponsorQuote: v.optional(v.number()),
-    profileName: v.optional(v.string()),
-    ...runIntentArgs,
-  },
-  returns: runResultValidator,
-  handler: async (ctx, args): Promise<RunIntroResult> => {
-    return await executeIntroRun(ctx, {
-      csvText: args.csvText?.trim() || DEMO_CRM_CSV,
-      eventName: args.eventName.trim() || DEMO_EVENT.name,
-      eventSource: args.eventSource.trim(),
-      sponsorQuote: args.sponsorQuote ?? DEMO_EVENT.sponsorQuote,
-      profileName: args.profileName?.trim() || DEMO_EVENT.profileName,
-      objective: args.objective,
-      participationOptions: args.participationOptions,
-      repCount: args.repCount,
-    });
+  args: introArgs,
+  returns: fullResultValidator,
+  handler: async (ctx, args): Promise<FullRunResult> => {
+    const prepared = await prepareEvent(ctx, args);
+
+    const pipeline: PipelineFullResult = await ctx.runAction(
+      internal.pipeline.runFullPipeline,
+      {
+        eventId: prepared.eventId,
+        eventName: args.eventName.trim() || DEMO_EVENT.name,
+        eventSource: args.eventSource.trim(),
+        runIntent: buildIntent(args),
+      },
+    );
+
+    return {
+      ...prepared,
+      matchCount: pipeline.matchCount,
+      eventScoreId: pipeline.eventScoreId,
+      decisionMemoId: pipeline.decisionMemoId,
+      sourceCount: pipeline.sourceCount,
+    };
   },
 });
 
 /** Back-compat: seed with baked-in demo fixtures (same pipeline path). */
 export const seedDemo = action({
   args: {},
-  returns: runResultValidator,
-  handler: async (ctx): Promise<RunIntroResult> => {
-    return await executeIntroRun(ctx, {
+  returns: fullResultValidator,
+  handler: async (ctx): Promise<FullRunResult> => {
+    const prepared = await prepareEvent(ctx, {
       csvText: DEMO_CRM_CSV,
       eventName: DEMO_EVENT.name,
-      eventSource: DEMO_EXHIBITOR_SNAPSHOT,
       sponsorQuote: DEMO_EVENT.sponsorQuote,
       profileName: DEMO_EVENT.profileName,
+      startDate: DEMO_EVENT.startDate,
+      endDate: DEMO_EVENT.endDate,
+      location: DEMO_EVENT.location,
     });
+
+    const pipeline: PipelineFullResult = await ctx.runAction(
+      internal.pipeline.runFullPipeline,
+      {
+        eventId: prepared.eventId,
+        eventName: DEMO_EVENT.name,
+        eventSource: DEMO_EXHIBITOR_SNAPSHOT,
+        runIntent: undefined,
+      },
+    );
+
+    return {
+      ...prepared,
+      matchCount: pipeline.matchCount,
+      eventScoreId: pipeline.eventScoreId,
+      decisionMemoId: pipeline.decisionMemoId,
+      sourceCount: pipeline.sourceCount,
+    };
   },
 });
 
-type IntroRunArgs = {
-  csvText: string;
-  eventName: string;
-  eventSource: string;
-  sponsorQuote: number;
-  profileName: string;
-  objective?: string;
-  participationOptions?: string[];
-  repCount?: number;
-};
-
-async function executeIntroRun(
+async function prepareEvent(
   ctx: ActionCtx,
-  args: IntroRunArgs,
-): Promise<RunIntroResult> {
-  const slug = slugify(args.eventName);
+  args: {
+    csvText?: string;
+    eventName: string;
+    sponsorQuote?: number;
+    profileName?: string;
+    // Live runs leave these undefined — research.gather discovers the real
+    // dates/location. seedDemo passes the baked-in demo values.
+    startDate?: string;
+    endDate?: string;
+    location?: string;
+  },
+): Promise<PreparedEvent> {
+  const eventName = args.eventName.trim() || DEMO_EVENT.name;
+  const slug = slugify(eventName);
 
   const profileId: Id<"revenueProfile"> = await ctx.runMutation(
     api.profile.buildFromCsv,
     {
-      csvText: args.csvText,
-      profileName: args.profileName,
+      csvText: args.csvText?.trim() || DEMO_CRM_CSV,
+      profileName: args.profileName?.trim() || DEMO_EVENT.profileName,
     },
   );
 
   const eventId: Id<"event"> = await ctx.runMutation(api.events.create, {
-    name: args.eventName,
+    name: eventName,
     slug,
-    startDate: DEMO_EVENT.startDate,
-    endDate: DEMO_EVENT.endDate,
-    location: DEMO_EVENT.location,
-    sponsorQuote: args.sponsorQuote,
+    startDate: args.startDate,
+    endDate: args.endDate,
+    location: args.location,
+    sponsorQuote: args.sponsorQuote ?? DEMO_EVENT.sponsorQuote,
     revenueProfileId: profileId,
   });
 
-  const source = await resolveEventSourceText(args.eventSource);
+  return { profileId, eventId, slug };
+}
 
-  const sourceDocumentId: Id<"sourceDocument"> = await ctx.runMutation(
-    api.ingest.ingestSource,
-    {
-      eventId,
-      textContent: source.text,
-      kind: source.kind,
-      url: source.url ?? (source.kind === "url" ? args.eventSource : undefined),
-      title: `${args.eventName} — event source`,
-    },
-  );
-
+function buildIntent(args: RunIntent): RunIntent | undefined {
   const hasIntent =
     args.objective ||
     (args.participationOptions && args.participationOptions.length > 0) ||
     args.repCount != null;
 
-  const pipeline: PipelineResult = await ctx.runAction(
-    internal.pipeline.runPipelineInternal,
-    {
-      eventId,
-      sourceDocumentId,
-      runIntent: hasIntent
-        ? {
-            objective: args.objective,
-            participationOptions: args.participationOptions,
-            repCount: args.repCount,
-          }
-        : undefined,
-    },
-  );
-
-  return {
-    profileId,
-    eventId,
-    sourceDocumentId,
-    slug,
-    ...pipeline,
-  };
+  return hasIntent
+    ? {
+        objective: args.objective,
+        participationOptions: args.participationOptions,
+        repCount: args.repCount,
+      }
+    : undefined;
 }

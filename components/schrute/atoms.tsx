@@ -69,6 +69,29 @@ export function TierBadge({
   );
 }
 
+export function PresenceBadge({
+  presence,
+  editionLabel,
+  className,
+}: {
+  presence?: "confirmed" | "recurring";
+  editionLabel?: string;
+  className?: string;
+}) {
+  if (presence !== "recurring") return null;
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "bg-warning/15 text-warning border-warning/30",
+        className,
+      )}
+    >
+      {editionLabel ? `Returned ${editionLabel}` : "Likely to return"}
+    </Badge>
+  );
+}
+
 export function StatPill({
   label,
   value,

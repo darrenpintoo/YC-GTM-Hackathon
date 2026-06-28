@@ -25,8 +25,14 @@ export const scoreEvent = internalMutation({
       .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
       .collect();
 
-    const tier1Matches = matches.filter((m) => m.tier === "tier1_crm");
-    const tier2Matches = matches.filter((m) => m.tier === "tier2_icp");
+    // The underwriting only counts companies CONFIRMED at this year's event.
+    // "Recurring" matches (likely-to-return, from past editions) are upside, not
+    // committed pipeline — surfaced separately in the rationale and UI.
+    const confirmedMatches = matches.filter((m) => m.presence !== "recurring");
+    const recurringMatches = matches.filter((m) => m.presence === "recurring");
+
+    const tier1Matches = confirmedMatches.filter((m) => m.tier === "tier1_crm");
+    const tier2Matches = confirmedMatches.filter((m) => m.tier === "tier2_icp");
     const openOppMatches = tier1Matches.filter((m) => m.matchedOppValue);
 
     const matchedPipelineValue = openOppMatches.reduce(
@@ -35,8 +41,9 @@ export const scoreEvent = internalMutation({
     );
 
     const avgMatchConfidence =
-      matches.length > 0
-        ? matches.reduce((sum, match) => sum + match.confidence, 0) / matches.length
+      confirmedMatches.length > 0
+        ? confirmedMatches.reduce((sum, match) => sum + match.confidence, 0) /
+          confirmedMatches.length
         : 0;
 
     const assumptions = event.assumptions ?? DEFAULT_UNDERWRITING_ASSUMPTIONS;
@@ -49,6 +56,22 @@ export const scoreEvent = internalMutation({
       avgMatchConfidence,
       sponsorQuote: event.sponsorQuote,
     });
+
+    // Add a "likely to return" upside note when past-edition matches exist.
+    const rationale = [...result.rationale];
+    if (recurringMatches.length > 0) {
+      const recurringOppValue = recurringMatches.reduce(
+        (sum, m) => sum + (m.matchedOppValue ?? 0),
+        0,
+      );
+      const valueNote =
+        recurringOppValue > 0
+          ? ` (~$${Math.round(recurringOppValue / 1000)}k open pipeline)`
+          : "";
+      rationale.push(
+        `${recurringMatches.length} more account${recurringMatches.length === 1 ? "" : "s"} attended past editions and are likely to return${valueNote} — upside not counted in break-even.`,
+      );
+    }
 
     const existing = await ctx.db
       .query("eventScore")
@@ -67,7 +90,7 @@ export const scoreEvent = internalMutation({
       recommendation: result.recommendation,
       subScores: result.subScores,
       assumptions,
-      rationale: result.rationale,
+      rationale,
       createdAt: Date.now(),
     };
 

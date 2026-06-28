@@ -25,9 +25,9 @@ import type {
  * The whole UI consumes this hook and never calls Convex directly, so we can
  * develop against rich demo data and flip to live Convex at runtime via the
  * Mock/Live toggle (DataModeContext). The initial mode is seeded from
- * NEXT_PUBLIC_USE_MOCKS ("false" => live).
+ * NEXT_PUBLIC_USE_MOCKS ("true" => mock; default is live).
  */
-export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS !== "false";
+export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
 
 export const DEMO_EVENT_SLUG = "world-of-concrete-2026";
 
@@ -53,6 +53,49 @@ export type UseEventBundleResult = {
   isLoading: boolean;
   hasResults: boolean;
 };
+
+type LiveAttendeeRow = {
+  _id: string;
+  fullName: string;
+  title: string;
+  companyName: string;
+  accountMatchId?: string;
+  matchTier?: "tier1_crm" | "tier2_icp";
+  network: "linkedin" | "x" | "web";
+  postQuote: string;
+  postedAt?: string;
+  confidence: number;
+  profileUrl?: string;
+  sourceUrl?: string;
+  email?: string;
+  emailStatus?: string;
+  phone?: string;
+  location?: string;
+  enrichedTitle?: string;
+  matchReason?: string;
+};
+
+function toLikelyAttendee(row: LiveAttendeeRow): LikelyAttendee {
+  return {
+    id: row._id,
+    fullName: row.fullName,
+    title: row.title,
+    companyName: row.companyName,
+    accountMatchId: row.accountMatchId,
+    matchTier: row.matchTier,
+    network: row.network,
+    postQuote: row.postQuote,
+    postedAt: row.postedAt ?? "",
+    confidence: row.confidence,
+    profileUrl: row.profileUrl ?? row.sourceUrl ?? "#",
+    email: row.email,
+    emailStatus: row.emailStatus,
+    phone: row.phone,
+    location: row.location,
+    enrichedTitle: row.enrichedTitle,
+    matchReason: row.matchReason,
+  };
+}
 
 export function useEventBundle(eventSlug?: string): UseEventBundleResult {
   const { mode, scenario } = useDataMode();
@@ -102,6 +145,14 @@ export function useEventBundle(eventSlug?: string): UseEventBundleResult {
       ? { profileId: liveEvent.revenueProfileId }
       : "skip",
   );
+  const liveAttendees = useQuery(
+    api.contracts.listAttendeesByEvent,
+    !isMock && eventId ? { eventId } : "skip",
+  );
+  const liveContacts = useQuery(
+    api.contracts.listContactsByEvent,
+    !isMock && eventId ? { eventId } : "skip",
+  );
 
   if (isMock) {
     const demo = DEMO_SCENARIOS[scenario].bundle;
@@ -136,8 +187,14 @@ export function useEventBundle(eventSlug?: string): UseEventBundleResult {
   const score = (liveScore ?? null) as unknown as EventScore | null;
   const memo = (liveMemo ?? null) as unknown as DecisionMemo | null;
 
-  // Contacts + outreach live behind Nehal's sidecar; no contract query yet.
   const demoFallback = DEMO_SCENARIOS.attend.bundle;
+
+  // Live enrichment (web-search attendees + Fiber contacts) fills in reactively
+  // after the core pipeline. Until it produces signals, fall back to demo
+  // samples so the UI is never empty — and flag it honestly.
+  const liveAttendeeRows = (liveAttendees ?? []) as unknown as LiveAttendeeRow[];
+  const liveContactRows = (liveContacts ?? []) as unknown as Contact[];
+  const hasLiveAttendees = liveAttendeeRows.length > 0;
 
   const bundle: EventBundle = {
     event: liveEvent as unknown as Event,
@@ -150,11 +207,13 @@ export function useEventBundle(eventSlug?: string): UseEventBundleResult {
     matches,
     score,
     memo,
-    contacts: demoFallback.contacts,
+    contacts: hasLiveAttendees ? liveContactRows : demoFallback.contacts,
     outreachDrafts: demoFallback.outreachDrafts,
     jobs: (liveJobs ?? []) as unknown as Job[],
-    attendees: DEMO_SCENARIOS.attend.attendees,
-    usesMockEnrichment: true,
+    attendees: hasLiveAttendees
+      ? liveAttendeeRows.map(toLikelyAttendee)
+      : DEMO_SCENARIOS.attend.attendees,
+    usesMockEnrichment: !hasLiveAttendees,
   };
 
   return {

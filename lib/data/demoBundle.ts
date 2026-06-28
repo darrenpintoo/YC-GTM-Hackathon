@@ -617,7 +617,7 @@ export const demoSkipBundle: SchruteDemoBundle = {
 // ToS-sensitive, so this is intentionally a clean seam, not live scraping.)
 // ---------------------------------------------------------------------------
 
-export type AttendeeNetwork = "linkedin" | "x";
+export type AttendeeNetwork = "linkedin" | "x" | "web";
 
 export type LikelyAttendee = {
   id: string;
@@ -630,9 +630,17 @@ export type LikelyAttendee = {
   network: AttendeeNetwork;
   postQuote: string;
   postedAt: string;
-  /** 0–1, how explicit the attendance signal is. */
+  /** 0–1, how explicit the attendance signal is. Kept for ranking; not shown. */
   confidence: number;
   profileUrl: string;
+  /** Fiber-sourced enrichment (best-effort). */
+  email?: string;
+  emailStatus?: string;
+  phone?: string;
+  location?: string;
+  enrichedTitle?: string;
+  /** One-line AI rationale for why this person is a good match. */
+  matchReason?: string;
 };
 
 export const demoAttendees: LikelyAttendee[] = [

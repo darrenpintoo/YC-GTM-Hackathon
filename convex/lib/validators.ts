@@ -86,6 +86,11 @@ export const underwritingAssumptionsValidator = v.object({
   captureRate: v.number(),
 });
 
+export const presenceValidator = v.union(
+  v.literal("confirmed"),
+  v.literal("recurring"),
+);
+
 export const accountMatchFields = {
   eventId: v.id("event"),
   tier: matchTierValidator,
@@ -96,6 +101,9 @@ export const accountMatchFields = {
   boothOrSession: v.optional(v.string()),
   fitScore: v.number(),
   confidence: v.number(),
+  // "confirmed" present this year vs "recurring" (likely to return, from a past edition).
+  presence: v.optional(presenceValidator),
+  editionLabel: v.optional(v.string()),
   evidence: v.array(evidenceValidator),
   matchedOppValue: v.optional(v.number()),
   eventCompanyId: v.optional(v.id("eventCompany")),

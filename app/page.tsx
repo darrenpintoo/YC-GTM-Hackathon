@@ -3,7 +3,10 @@
 import * as React from "react";
 import { useAction } from "convex/react";
 import {
+  AlertTriangle,
   CalendarDays,
+  ExternalLink,
+  FileSearch,
   LayoutGrid,
   MapPin,
   Plane,
@@ -58,11 +61,11 @@ const SIM_STEPS: { step: JobStep; message: string }[] = [
 ];
 
 export default function Home() {
-  const runFromIntro = useAction(api.orchestrate.runFromIntro);
+  const startRun = useAction(api.orchestrate.startRun);
   const { mode, scenario } = useDataMode();
-  const [liveEventSlug, setLiveEventSlug] = React.useState(DEMO_EVENT_SLUG);
+  const [runSlug, setRunSlug] = React.useState<string | null>(null);
   const { bundle, isLoading } = useEventBundle(
-    mode === "live" ? liveEventSlug : undefined,
+    mode === "live" ? (runSlug ?? DEMO_EVENT_SLUG) : undefined,
   );
 
   const [phase, setPhase] = React.useState<Phase>("intro");
@@ -88,6 +91,32 @@ export default function Home() {
     setSelected(null);
     setDrawerOpen(false);
   }, [mode, scenario]);
+
+  // Live mode: stream job rows and transition to results only when the real
+  // pipeline reaches the memo step (or surface an error if a step fails).
+  React.useEffect(() => {
+    if (mode !== "live" || phase !== "running" || !runSlug) return;
+    if (!bundle || bundle.event.slug !== runSlug) return;
+
+    const failed = bundle.jobs.find((j) => j.status === "failed");
+    if (failed) {
+      setError(failed.error || `Pipeline failed at the ${failed.step} step`);
+      toast.error("Pipeline failed");
+      setPhase("intro");
+      setPipelineRunning(false);
+      return;
+    }
+
+    const memo = bundle.jobs.find((j) => j.step === "memo");
+    if (memo?.status === "completed" && bundle.score) {
+      setPhase("results");
+      setPipelineRunning(false);
+      const n = bundle.matches.length;
+      toast.success(
+        `Pipeline complete — ${n} account${n === 1 ? "" : "s"} matched`,
+      );
+    }
+  }, [mode, phase, runSlug, bundle]);
 
   function runMockSimulation(eventId: string) {
     let i = 0;
@@ -125,7 +154,6 @@ export default function Home() {
     setError(null);
     setPhase("running");
     setSimJobs([]);
-    setPipelineRunning(mode === "live");
     setIntent({
       objective: payload.objective,
       options: payload.options,
@@ -134,12 +162,17 @@ export default function Home() {
     toast(`Reading ${payload.eventName} against ${payload.companyCount} accounts…`);
 
     if (mode === "mock") {
+      setPipelineRunning(false);
       runMockSimulation(bundle?.event._id ?? "mock_event");
       return;
     }
 
+    // Live: kick off the pipeline, point at the new event, then let job rows
+    // stream in. The transition-to-results effect handles completion.
+    setPipelineRunning(true);
+    setRunSlug(null);
     try {
-      const result = await runFromIntro({
+      const result = await startRun({
         csvText: payload.csvText,
         eventName: payload.eventName,
         eventSource: payload.eventSource,
@@ -148,17 +181,12 @@ export default function Home() {
         participationOptions: payload.options,
         repCount: payload.repCount,
       });
-      setLiveEventSlug(result.slug);
-      setPhase("results");
-      toast.success(
-        `Pipeline complete — ${result.matchCount} account${result.matchCount === 1 ? "" : "s"} matched`,
-      );
+      setRunSlug(result.slug);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Run failed";
       setError(message);
       toast.error(message);
       setPhase("intro");
-    } finally {
       setPipelineRunning(false);
     }
   }
@@ -176,7 +204,9 @@ export default function Home() {
     setDrawerOpen(true);
   }
 
-  const jobsForRunning = mode === "mock" ? simJobs : bundle?.jobs ?? [];
+  const liveRunJobs =
+    runSlug && bundle?.event.slug === runSlug ? bundle.jobs : [];
+  const jobsForRunning = mode === "mock" ? simJobs : liveRunJobs;
 
   return (
     <EvidenceInspectorProvider sourceDocuments={bundle?.sourceDocuments ?? []}>
@@ -250,8 +280,11 @@ function RunningView({
     <div className="space-y-4">
       {mode === "live" ? (
         <LivePipelineNotice
-          detail="Running your CRM + event source through Convex and OpenAI. This takes ~10–15 seconds."
+          detail="Deep research: we map the event site, search the open web for sponsor/exhibitor/speaker pages, scrape the most relevant ones, then extract companies, write the memo, and find attendees. Steps stream below (~45–120s)."
         />
+      ) : null}
+      {mode === "live" && bundle && bundle.sourceDocuments.length > 0 ? (
+        <GatheredSourcesLive sources={bundle.sourceDocuments} />
       ) : null}
       <div className="grid gap-6 lg:grid-cols-2">
       <div>
@@ -305,10 +338,132 @@ function MockEnrichmentNotice() {
       <Info className="mt-0.5 size-4 shrink-0 text-warning" />
       <p className="text-xs text-muted-foreground">
         <span className="font-medium text-foreground">Demo enrichment data.</span>{" "}
-        Contacts, outreach drafts, and social-post attendees are curated frontend
-        samples until the Fiber sidecar and social signals API are wired. Matches,
+        No public attendance signals were found yet, so contacts, outreach
+        drafts, and social-post attendees are showing curated samples. Matches,
         score, and memo are from the live Convex pipeline.
       </p>
+    </div>
+  );
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  sponsors: "Sponsors",
+  exhibitors: "Exhibitors",
+  speakers: "Speakers",
+  program: "Program",
+  news: "News / Press",
+  event: "Event page",
+  other: "Other",
+};
+
+function hostFromUrl(url?: string): string {
+  if (!url) return "source";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url.slice(0, 40);
+  }
+}
+
+function GatheredSourcesLive({
+  sources,
+}: {
+  sources: EventBundle["sourceDocuments"];
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2.5">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <FileSearch className="size-3.5 text-primary" />
+        Sources gathered ({sources.length})
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {sources.map((s) => (
+          <span
+            key={s._id}
+            className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-[11px] text-muted-foreground"
+          >
+            {hostFromUrl(s.url)}
+            {s.category ? (
+              <span className="ml-1 text-foreground/60">
+                · {CATEGORY_LABEL[s.category] ?? s.category}
+              </span>
+            ) : null}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ThinCorpusNotice() {
+  return (
+    <div className="flex gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5 text-sm">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+      <p className="text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">
+          Limited public data for this event.
+        </span>{" "}
+        No published sponsor or exhibitor list was found, so matches may be thin.
+        Try linking a specific sponsors/exhibitors page, or paste the exhibitor
+        directory directly for a deeper read.
+      </p>
+    </div>
+  );
+}
+
+function SourcesPanel({
+  sources,
+}: {
+  sources: EventBundle["sourceDocuments"];
+}) {
+  if (sources.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No sources were gathered for this run.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="max-w-2xl text-sm text-muted-foreground">
+        Every page Schrute read while researching this event. Companies and
+        attendees are cited back to these sources.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {sources.map((s) => (
+          <Card key={s._id}>
+            <CardContent className="space-y-2 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="rounded-md bg-secondary/50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {s.category ? (CATEGORY_LABEL[s.category] ?? s.category) : "Source"}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {(s.textContent?.length ?? 0).toLocaleString()} chars
+                </span>
+              </div>
+              <p className="text-sm font-medium leading-snug text-foreground">
+                {s.title || hostFromUrl(s.url)}
+              </p>
+              {s.url ? (
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  {hostFromUrl(s.url)}
+                  <ExternalLink className="size-3" />
+                </a>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {s.kind === "snapshot" ? "Cached snapshot" : "Pasted source"}
+                </span>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -328,11 +483,32 @@ function ResultsView({
   onSelect: (m: AccountMatch) => void;
   onReset: () => void;
 }) {
-  const { event, matches, score, memo, contacts, outreachDrafts, attendees } =
-    bundle;
+  const {
+    event,
+    matches,
+    score,
+    memo,
+    contacts,
+    outreachDrafts,
+    attendees,
+    sourceDocuments,
+  } = bundle;
+
+  // Thin corpus: little usable public text gathered, so matches may be sparse.
+  const corpusChars = sourceDocuments.reduce(
+    (sum, s) => sum + (s.textContent?.length ?? 0),
+    0,
+  );
+  const onlyFallbackSources = sourceDocuments.every(
+    (s) => s.kind === "snapshot" || s.kind === "paste",
+  );
+  const isThinCorpus =
+    mode === "live" &&
+    (corpusChars < 1500 || (matches.length === 0 && onlyFallbackSources));
 
   return (
     <div className="space-y-6">
+      {mode === "live" && isThinCorpus ? <ThinCorpusNotice /> : null}
       {mode === "live" && bundle.usesMockEnrichment ? (
         <MockEnrichmentNotice />
       ) : null}
@@ -356,6 +532,10 @@ function ResultsView({
           <TabsTrigger value="people">
             <Users className="size-4" />
             People ({attendees.length})
+          </TabsTrigger>
+          <TabsTrigger value="sources">
+            <FileSearch className="size-4" />
+            Sources ({sourceDocuments.length})
           </TabsTrigger>
           <TabsTrigger value="portfolio">
             <Plane className="size-4" />
@@ -430,6 +610,16 @@ function ResultsView({
             </p>
           </div>
           <AttendeeList attendees={attendees} />
+        </TabsContent>
+
+        <TabsContent value="sources" className="space-y-4">
+          <div>
+            <h2 className="font-display text-2xl">Sources we read</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              The pages gathered during deep research for this event.
+            </p>
+          </div>
+          <SourcesPanel sources={sourceDocuments} />
         </TabsContent>
 
         <TabsContent value="portfolio">

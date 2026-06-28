@@ -1,8 +1,13 @@
 "use client";
 
-import { BadgeCheck, Building2, ChevronRight, MapPin } from "lucide-react";
+import { BadgeCheck, Building2, ChevronRight, MapPin, RotateCcw } from "lucide-react";
 
-import { EmptyState, EvidenceChip, TierBadge } from "@/components/schrute/atoms";
+import {
+  EmptyState,
+  EvidenceChip,
+  PresenceBadge,
+  TierBadge,
+} from "@/components/schrute/atoms";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROLE_LABEL, TIER_META } from "@/lib/labels";
 import type { AccountMatch, Contact } from "@/lib/types";
@@ -43,8 +48,11 @@ export function AccountBoard({
     );
   }
 
-  const tier1 = matches.filter((m) => m.tier === "tier1_crm");
-  const tier2 = matches.filter((m) => m.tier === "tier2_icp");
+  // Confirmed this year vs likely-to-return (named only in a past edition).
+  const confirmed = matches.filter((m) => m.presence !== "recurring");
+  const recurring = matches.filter((m) => m.presence === "recurring");
+  const tier1 = confirmed.filter((m) => m.tier === "tier1_crm");
+  const tier2 = confirmed.filter((m) => m.tier === "tier2_icp");
 
   const contactByMatch = new Map(contacts.map((c) => [c.accountMatchId, c]));
 
@@ -70,7 +78,61 @@ export function AccountBoard({
           onSelect={onSelect}
         />
       ) : null}
+      {recurring.length > 0 ? (
+        <RecurringGroup
+          count={recurring.length}
+          matches={recurring}
+          contactByMatch={contactByMatch}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function RecurringGroup({
+  count,
+  matches,
+  contactByMatch,
+  selectedId,
+  onSelect,
+}: {
+  count: number;
+  matches: AccountMatch[];
+  contactByMatch: Map<string, Contact>;
+  selectedId?: string | null;
+  onSelect: (match: AccountMatch) => void;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-baseline justify-between">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
+            <RotateCcw className="size-3" />
+            Likely to return
+          </span>
+          <span className="text-sm font-medium">
+            {count} {count === 1 ? "account" : "accounts"}
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          Named only at past editions — upside, not counted in break-even.
+        </span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {matches.map((match, i) => (
+          <AccountCard
+            key={match._id}
+            match={match}
+            index={i}
+            contact={contactByMatch.get(match._id)}
+            selected={selectedId === match._id}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -167,6 +229,14 @@ function AccountCard({
             {ROLE_LABEL[match.role]}
             {match.boothOrSession ? ` · ${match.boothOrSession}` : ""}
           </p>
+          {match.presence === "recurring" ? (
+            <div className="mt-2">
+              <PresenceBadge
+                presence={match.presence}
+                editionLabel={match.editionLabel}
+              />
+            </div>
+          ) : null}
         </div>
         <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </div>

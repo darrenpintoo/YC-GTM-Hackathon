@@ -1,0 +1,16 @@
+company_name,domain,account_type,stage,deal_size,industry,region,buyer_title,open_opp_value
+Turner Construction,turnerconstruction.com,open_opp,Negotiation,195000,General Contracting,US Northeast,VP Safety,195000
+Caterpillar,caterpillar.com,open_opp,Proposal,240000,Heavy Equipment,US Midwest,Director of EHS,240000
+Komatsu,komatsu.com,open_opp,Discovery,175000,Heavy Equipment,US West,VP Operations,175000
+John Deere Construction,johndeere.com,open_opp,Discovery,150000,Heavy Equipment,US Midwest,Director of Safety,150000
+Volvo Construction Equipment,volvoce.com,target,Target,165000,Heavy Equipment,US Northeast,VP Safety,
+Skanska USA,usa.skanska.com,open_opp,Proposal,128000,Commercial Construction,US Northeast,Director of EHS,128000
+Bechtel,bechtel.com,closed_won,Closed Won,92000,Industrial Construction,US West,VP Operations,
+Fluor Corporation,fluor.com,closed_won,Closed Won,85000,Industrial EPC,US South,Director of EHS,
+Kiewit,kiewit.com,target,Target,142000,Heavy Civil,US Midwest,VP Safety,
+McCarthy Building Companies,mccarthy.com,open_opp,Discovery,118000,Commercial Construction,US West,Safety Manager,118000
+Hensel Phelps,henselphelps.com,closed_won,Closed Won,76000,Commercial Construction,US West,Director of Safety,
+Liebherr USA,liebherr.com,target,Target,130000,Cranes & Equipment,US Northeast,VP Operations,
+PCL Construction,pcl.com,target,Target,98000,Commercial Construction,US West,Director of EHS,
+SANY America,sanyamerica.com,target,Target,88000,Heavy Equipment,US South,Plant Safety Manager,
+Whiting-Turner,whiting-turner.com,open_opp,Proposal,105000,General Contracting,US Mid-Atlantic,VP Safety,105000

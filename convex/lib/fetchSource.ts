@@ -1,4 +1,5 @@
 import { DEMO_EXHIBITOR_SNAPSHOT } from "./demoSeed";
+import { hasFirecrawl, scrapeMarkdown, searchEventSource } from "./firecrawl";
 
 export type ResolvedSource = {
   text: string;
@@ -9,8 +10,15 @@ export type ResolvedSource = {
 const MAX_FETCH_CHARS = 50_000;
 
 /**
- * Resolve exhibitor/sponsor source text from a URL, pasted content, or fallback snapshot.
- * URL fetch is best-effort — many exhibitor sites block bots or return SPA shells.
+ * Resolve exhibitor/sponsor source text from a URL, pasted content, an event
+ * name, or a fallback snapshot.
+ *
+ * Order of preference:
+ *   1. URL          -> Firecrawl scrape (clean markdown, JS-rendered) then a
+ *                       plain fetch, then snapshot.
+ *   2. Pasted text  -> use as-is.
+ *   3. Event name   -> Firecrawl search for an exhibitor/sponsor page.
+ *   4. Empty / fail -> cached snapshot so a run is never blocked.
  */
 export async function resolveEventSourceText(
   eventSource: string,
@@ -21,32 +29,55 @@ export async function resolveEventSourceText(
   }
 
   if (/^https?:\/\//i.test(trimmed)) {
-    try {
-      const response = await fetch(trimmed, {
-        headers: {
-          "User-Agent": "SchruteBot/1.0 (event-ingest)",
-          Accept: "text/html,text/plain,*/*",
-        },
-        signal: AbortSignal.timeout(12_000),
-      });
-      if (response.ok) {
-        const raw = await response.text();
-        const text = stripHtml(raw).slice(0, MAX_FETCH_CHARS);
-        if (text.length > 200) {
-          return { text, url: trimmed, kind: "url" };
-        }
-      }
-    } catch (err) {
-      console.warn("Event URL fetch failed, using fallback snapshot", err);
+    const scraped = await scrapeMarkdown(trimmed, MAX_FETCH_CHARS);
+    if (scraped) {
+      return { text: scraped.markdown, url: scraped.url, kind: "url" };
     }
-    return {
-      text: DEMO_EXHIBITOR_SNAPSHOT,
-      url: trimmed,
-      kind: "snapshot",
-    };
+
+    const plain = await plainFetch(trimmed);
+    if (plain) {
+      return { text: plain, url: trimmed, kind: "url" };
+    }
+
+    return { text: DEMO_EXHIBITOR_SNAPSHOT, url: trimmed, kind: "snapshot" };
   }
 
+  // Looks like pasted source content (multi-line or long) — use it directly.
+  if (trimmed.includes("\n") || trimmed.length > 120) {
+    return { text: trimmed.slice(0, MAX_FETCH_CHARS), kind: "paste" };
+  }
+
+  // Otherwise treat it as an event name and search the web for a source page.
+  if (hasFirecrawl()) {
+    const found = await searchEventSource(
+      `${trimmed} exhibitor list sponsors speakers`,
+    );
+    if (found?.markdown) {
+      return { text: found.markdown, url: found.url, kind: "url" };
+    }
+  }
+
+  // Short free-text with no URL and no search hit: keep it as pasted context.
   return { text: trimmed.slice(0, MAX_FETCH_CHARS), kind: "paste" };
+}
+
+async function plainFetch(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "SchruteBot/1.0 (event-ingest)",
+        Accept: "text/html,text/plain,*/*",
+      },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) return null;
+    const raw = await response.text();
+    const text = stripHtml(raw).slice(0, MAX_FETCH_CHARS);
+    return text.length > 200 ? text : null;
+  } catch (err) {
+    console.warn("Plain URL fetch failed", err);
+    return null;
+  }
 }
 
 function stripHtml(html: string): string {

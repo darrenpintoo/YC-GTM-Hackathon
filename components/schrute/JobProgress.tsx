@@ -8,12 +8,12 @@ import type { Job, JobStatus, JobStep } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const STEP_LABEL: Record<JobStep, string> = {
-  ingest: "Ingest source",
+  ingest: "Gather sources",
   extract: "Extract companies",
   match: "Match accounts",
   score: "Underwrite + score",
   memo: "Draft memo",
-  enrich: "Enrich contacts",
+  enrich: "Find attendees + contacts",
   outreach: "Draft outreach",
 };
 
