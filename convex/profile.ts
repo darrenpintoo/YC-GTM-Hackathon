@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { parseCsv, parseOptionalNumber } from "./lib/csvParse";
 import { buildProfileHeuristic, mapAccountType } from "./lib/profileHeuristic";
 
@@ -28,6 +29,83 @@ export const buildFromCsv = mutation({
       closedWonPatterns: profile.closedWonPatterns,
       createdAt: now,
     });
+
+    for (const row of rows) {
+      await ctx.db.insert("crmAccount", {
+        revenueProfileId: profileId,
+        companyName: row.company_name ?? row.company ?? "Unknown",
+        domain: row.domain || undefined,
+        accountType: mapAccountType(row.account_type),
+        stage: row.stage || undefined,
+        dealSize: parseOptionalNumber(row.deal_size),
+        industry: row.industry || undefined,
+        region: row.region || undefined,
+        buyerTitle: row.buyer_title || undefined,
+        openOppValue: parseOptionalNumber(row.open_opp_value),
+        createdAt: now,
+      });
+    }
+
+    return profileId;
+  },
+});
+
+/** Reuse an existing profile by name — replaces CRM rows (warm demo idempotency). */
+export const upsertFromCsv = mutation({
+  args: {
+    csvText: v.string(),
+    profileName: v.string(),
+  },
+  returns: v.id("revenueProfile"),
+  handler: async (ctx, args) => {
+    const rows = parseCsv(args.csvText);
+    if (rows.length === 0) {
+      throw new Error("CSV is empty or invalid");
+    }
+
+    const profile = buildProfileHeuristic(rows, args.profileName);
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query("revenueProfile")
+      .withIndex("by_name", (q) => q.eq("name", args.profileName))
+      .first();
+
+    let profileId: Id<"revenueProfile">;
+
+    if (existing) {
+      profileId = existing._id;
+      await ctx.db.patch("revenueProfile", existing._id, {
+        industries: profile.industries,
+        buyerTitles: profile.buyerTitles,
+        dealSizeClusters: profile.dealSizeClusters,
+        geographies: profile.geographies,
+        keywords: profile.keywords,
+        closedWonPatterns: profile.closedWonPatterns,
+        updatedAt: now,
+      });
+
+      const oldAccounts = await ctx.db
+        .query("crmAccount")
+        .withIndex("by_revenue_profile", (q) =>
+          q.eq("revenueProfileId", existing._id),
+        )
+        .collect();
+      for (const account of oldAccounts) {
+        await ctx.db.delete("crmAccount", account._id);
+      }
+    } else {
+      profileId = await ctx.db.insert("revenueProfile", {
+        name: args.profileName,
+        industries: profile.industries,
+        buyerTitles: profile.buyerTitles,
+        dealSizeClusters: profile.dealSizeClusters,
+        geographies: profile.geographies,
+        keywords: profile.keywords,
+        closedWonPatterns: profile.closedWonPatterns,
+        createdAt: now,
+      });
+    }
 
     for (const row of rows) {
       await ctx.db.insert("crmAccount", {

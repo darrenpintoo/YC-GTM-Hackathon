@@ -9,6 +9,8 @@
  * the caller can fall back to the cached snapshot and never break a run.
  */
 
+import { withRedisCache } from "./redisCache";
+
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
 
 function getKey(): string | null {
@@ -28,6 +30,18 @@ export type FirecrawlScrape = {
 export async function scrapeMarkdown(
   url: string,
   maxChars = 50_000,
+): Promise<FirecrawlScrape | null> {
+  const { value } = await withRedisCache<FirecrawlScrape>({
+    namespace: "firecrawl-scrape",
+    keyParts: ["scrape", url, String(maxChars)],
+    fetch: async () => scrapeMarkdownLive(url, maxChars),
+  });
+  return value;
+}
+
+async function scrapeMarkdownLive(
+  url: string,
+  maxChars: number,
 ): Promise<FirecrawlScrape | null> {
   const key = getKey();
   if (!key) return null;
@@ -82,6 +96,23 @@ export type MappedLink = {
  * Optional `search` filters links by keyword relevance. Returns [] on failure.
  */
 export async function mapSite(
+  url: string,
+  opts?: { limit?: number; search?: string },
+): Promise<MappedLink[]> {
+  const { value } = await withRedisCache<MappedLink[]>({
+    namespace: "firecrawl-map",
+    keyParts: [
+      "map",
+      url,
+      String(opts?.limit ?? 200),
+      opts?.search ?? "",
+    ],
+    fetch: async () => mapSiteLive(url, opts),
+  });
+  return value ?? [];
+}
+
+async function mapSiteLive(
   url: string,
   opts?: { limit?: number; search?: string },
 ): Promise<MappedLink[]> {
@@ -144,6 +175,19 @@ const BATCH_CHUNK_SIZE = 15;
 export async function batchScrape(
   urls: string[],
   maxChars = 30_000,
+): Promise<BatchScrapeDoc[]> {
+  const sorted = [...urls].sort();
+  const { value } = await withRedisCache<BatchScrapeDoc[]>({
+    namespace: "firecrawl-batch",
+    keyParts: ["batch", sorted.join("|"), String(maxChars)],
+    fetch: async () => batchScrapeLive(urls, maxChars),
+  });
+  return value ?? [];
+}
+
+async function batchScrapeLive(
+  urls: string[],
+  maxChars: number,
 ): Promise<BatchScrapeDoc[]> {
   const key = getKey();
   if (!key || urls.length === 0) return [];
@@ -251,6 +295,17 @@ export type FirecrawlSearchResult = {
 export async function searchEventSource(
   query: string,
 ): Promise<FirecrawlSearchResult | null> {
+  const { value } = await withRedisCache<FirecrawlSearchResult>({
+    namespace: "firecrawl-search",
+    keyParts: ["search-event", query],
+    fetch: async () => searchEventSourceLive(query),
+  });
+  return value;
+}
+
+async function searchEventSourceLive(
+  query: string,
+): Promise<FirecrawlSearchResult | null> {
   const key = getKey();
   if (!key) return null;
 
@@ -302,6 +357,18 @@ export async function searchEventSource(
 export async function searchUrls(
   query: string,
   limit = 5,
+): Promise<MappedLink[]> {
+  const { value } = await withRedisCache<MappedLink[]>({
+    namespace: "firecrawl-search-urls",
+    keyParts: ["search-urls", query, String(limit)],
+    fetch: async () => searchUrlsLive(query, limit),
+  });
+  return value ?? [];
+}
+
+async function searchUrlsLive(
+  query: string,
+  limit: number,
 ): Promise<MappedLink[]> {
   const key = getKey();
   if (!key) return [];

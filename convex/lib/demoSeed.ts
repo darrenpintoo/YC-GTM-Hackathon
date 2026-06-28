@@ -47,6 +47,15 @@ export const DEMO_EVENT = {
   profileName: "SafeSite OS",
 };
 
+/** Live ASSP source URL for warm-cache demo runs (Firecrawl + Redis). */
+export const DEMO_SOURCE_URL =
+  "https://safety.assp.org/";
+
+export const DEMO_SOURCE_TITLE = "ASSP Safety 2026 — conference site";
+
+/** Offline fallback when scrape/search is unavailable. */
+export const DEMO_SOURCE_SNAPSHOT = DEMO_EXHIBITOR_SNAPSHOT;
+
 export const SKIP_SOURCE_URL =
   "https://www.worldofconcrete.com/home/innovative-product-awards/ipa-vote/";
 

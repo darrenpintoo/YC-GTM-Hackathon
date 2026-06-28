@@ -52,6 +52,7 @@ export const gather = internalAction({
     eventId: v.id("event"),
     eventName: v.string(),
     eventSource: v.string(),
+    warmCache: v.optional(v.boolean()),
   },
   returns: v.object({ sourceCount: v.number(), thin: v.boolean() }),
   handler: async (ctx, args): Promise<GatherResult> => {
@@ -60,7 +61,9 @@ export const gather = internalAction({
     });
     await ctx.runMutation(internal.ingest.updateGatherProgress, {
       eventId: args.eventId,
-      message: "Discovering sources across the web…",
+      message: args.warmCache
+        ? "Discovering sources (warm-cache replay)…"
+        : "Discovering sources across the web…",
       progress: 8,
     });
 
@@ -142,7 +145,11 @@ export const gather = internalAction({
 
       await ctx.runMutation(internal.ingest.updateGatherProgress, {
         eventId: args.eventId,
-        message: `Gathered ${saved}/${candidates.length} sources${cacheHits > 0 ? ` (${cacheHits} from cache)` : ""}`,
+        message: `Gathered ${saved}/${candidates.length} sources${
+          cacheHits > 0
+            ? ` (${cacheHits} scrape cache hit${cacheHits === 1 ? "" : "s"}`
+            : ""
+        }${args.warmCache ? `${cacheHits > 0 ? " · " : " ("}Redis warm replay)` : cacheHits > 0 ? ")" : ""}`,
         progress: 25 + Math.round((waveEnd / Math.max(candidates.length, 1)) * 60),
       });
     }
@@ -174,8 +181,8 @@ export const gather = internalAction({
       eventId: args.eventId,
       status: "completed",
       message: thin
-        ? `Gathered ${saved} source${saved === 1 ? "" : "s"} — limited public data found`
-        : `Gathered ${saved} sources`,
+        ? `Gathered ${saved} source${saved === 1 ? "" : "s"} — limited public data found${args.warmCache ? " (warm replay)" : ""}`
+        : `Gathered ${saved} sources${args.warmCache ? " (warm replay)" : ""}`,
       progress: 100,
     });
 

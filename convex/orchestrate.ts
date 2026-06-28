@@ -5,13 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import {
   DEMO_CRM_CSV,
   DEMO_EVENT,
-  DEMO_SOURCE_SNAPSHOT,
-  DEMO_SOURCE_TITLE,
   DEMO_SOURCE_URL,
-  SKIP_EVENT,
-  SKIP_SOURCE_SNAPSHOT,
-  SKIP_SOURCE_TITLE,
-  SKIP_SOURCE_URL,
 } from "./lib/demoSeed";
 import { slugify } from "./lib/slugify";
 
@@ -69,6 +63,7 @@ const introArgs = {
   eventSource: v.string(),
   sponsorQuote: v.optional(v.number()),
   profileName: v.optional(v.string()),
+  warmCache: v.optional(v.boolean()),
   ...runIntentArgs,
 };
 
@@ -88,9 +83,66 @@ export const startRun = action({
       eventName: args.eventName.trim() || DEMO_EVENT.name,
       eventSource: args.eventSource.trim(),
       runIntent: buildIntent(args),
+      warmCache: args.warmCache,
     });
 
     return prepared;
+  },
+});
+
+/**
+ * Stage demo: ASSP Safety 2026 with warm-cache pacing and honest cache-hit labels.
+ * Run `warmUpDemo` once before the show to populate Redis + Convex caches.
+ */
+export const startWarmDemo = action({
+  args: runIntentArgs,
+  returns: startResultValidator,
+  handler: async (ctx, args): Promise<PreparedEvent> => {
+    const prepared = await prepareWarmDemoEvent(ctx);
+
+    await ctx.scheduler.runAfter(0, internal.pipeline.runFullPipeline, {
+      eventId: prepared.eventId,
+      eventName: DEMO_EVENT.name,
+      eventSource: DEMO_SOURCE_URL,
+      runIntent: buildIntent(args),
+      warmCache: true,
+    });
+
+    return prepared;
+  },
+});
+
+/**
+ * Cold ASSP run that populates Redis (OpenAI, Firecrawl, Fiber) and Convex scrape cache.
+ * Use before stage demos when SCHRUTE_DEMO_CACHE=1 is set on the deployment.
+ */
+export const warmUpDemo = action({
+  args: {},
+  returns: fullResultValidator,
+  handler: async (ctx): Promise<FullRunResult> => {
+    const prepared = await prepareWarmDemoEvent(ctx);
+
+    const pipeline: PipelineFullResult = await ctx.runAction(
+      internal.pipeline.runFullPipeline,
+      {
+        eventId: prepared.eventId,
+        eventName: DEMO_EVENT.name,
+        eventSource: DEMO_SOURCE_URL,
+        runIntent: {
+          objective: "spend_decision",
+          participationOptions: ["attend", "exhibit", "sponsor"],
+        },
+        warmCache: false,
+      },
+    );
+
+    return {
+      ...prepared,
+      matchCount: pipeline.matchCount,
+      eventScoreId: pipeline.eventScoreId,
+      decisionMemoId: pipeline.decisionMemoId,
+      sourceCount: pipeline.sourceCount,
+    };
   },
 });
 
@@ -141,7 +193,7 @@ export const seedDemo = action({
       {
         eventId: prepared.eventId,
         eventName: DEMO_EVENT.name,
-        eventSource: DEMO_EXHIBITOR_SNAPSHOT,
+        eventSource: DEMO_SOURCE_URL,
         runIntent: undefined,
       },
     );
@@ -192,6 +244,28 @@ async function prepareEvent(
   });
 
   return { profileId, eventId, slug };
+}
+
+async function prepareWarmDemoEvent(ctx: ActionCtx): Promise<PreparedEvent> {
+  const profileId: Id<"revenueProfile"> = await ctx.runMutation(
+    api.profile.upsertFromCsv,
+    {
+      csvText: DEMO_CRM_CSV,
+      profileName: DEMO_EVENT.profileName,
+    },
+  );
+
+  const eventId: Id<"event"> = await ctx.runMutation(api.events.create, {
+    name: DEMO_EVENT.name,
+    slug: DEMO_EVENT.slug,
+    startDate: DEMO_EVENT.startDate,
+    endDate: DEMO_EVENT.endDate,
+    location: DEMO_EVENT.location,
+    sponsorQuote: DEMO_EVENT.sponsorQuote,
+    revenueProfileId: profileId,
+  });
+
+  return { profileId, eventId, slug: DEMO_EVENT.slug };
 }
 
 function buildIntent(args: RunIntent): RunIntent | undefined {

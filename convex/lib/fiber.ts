@@ -6,6 +6,8 @@
  * Missing key or any error returns null, so enrichment never breaks a run.
  */
 
+import { withRedisCache } from "./redisCache";
+
 const FIBER_BASE = "https://api.fiber.ai";
 
 function getKey(): string | null {
@@ -27,6 +29,21 @@ export type RevealedContact = {
 
 /** Reveal contact details for a LinkedIn URL. Returns null on failure. */
 export async function revealContact(
+  linkedinUrl: string,
+): Promise<RevealedContact | null> {
+  const apiKey = getKey();
+  if (!apiKey || !linkedinUrl) return null;
+
+  const { value } = await withRedisCache<RevealedContact>({
+    namespace: "fiber-reveal",
+    keyParts: ["reveal", linkedinUrl],
+    ttlSeconds: 60 * 15, // short TTL — contact data goes stale quickly
+    fetch: async () => revealContactLive(linkedinUrl),
+  });
+  return value;
+}
+
+async function revealContactLive(
   linkedinUrl: string,
 ): Promise<RevealedContact | null> {
   const apiKey = getKey();
