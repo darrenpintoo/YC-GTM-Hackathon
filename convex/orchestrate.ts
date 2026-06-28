@@ -5,7 +5,13 @@ import type { Id } from "./_generated/dataModel";
 import {
   DEMO_CRM_CSV,
   DEMO_EVENT,
-  DEMO_EXHIBITOR_SNAPSHOT,
+  DEMO_SOURCE_SNAPSHOT,
+  DEMO_SOURCE_TITLE,
+  DEMO_SOURCE_URL,
+  SKIP_EVENT,
+  SKIP_SOURCE_SNAPSHOT,
+  SKIP_SOURCE_TITLE,
+  SKIP_SOURCE_URL,
 } from "./lib/demoSeed";
 import { slugify } from "./lib/slugify";
 

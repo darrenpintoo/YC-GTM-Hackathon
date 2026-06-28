@@ -12,9 +12,9 @@ Connect your CRM, drop in an event, and Schrute identifies which of your **targe
 
 ## The pitch in six lines
 
-1. Field-sales-heavy B2B teams (construction, safety, industrial) spend $20K–$50K on trade-show booths *before* knowing if their buyers will be there.
+1. Field-sales-heavy B2B teams (construction, safety, industrial) spend $20K–$50K on trade-show booths *before* knowing if their target accounts have public presence there.
 2. Today that decision is made on a sponsor deck, a deadline, and a gut feel. The actual money-making prep — figuring out who's there and booking them — is done by hand in a spreadsheet, badly, if at all.
-3. Schrute reads your CRM and the event's public footprint, and tells you which of *your* accounts and open deals will be on that floor.
+3. Schrute reads your CRM and the event's public footprint, and tells you which of *your* accounts and open deals have public evidence at that event.
 4. Then it does the work: names the decision-makers, pulls verified contacts (Fiber), and drafts the pre-event meeting requests.
 5. The go/no-go memo — sponsor cap, break-even meeting count — falls out for free, grounded in counted real accounts.
 6. We start with construction and safety sellers because events are central, the data is messy, and the ACVs justify buying.
@@ -66,7 +66,7 @@ For each matched account, the **parallel enrichment sidecar** (Fiber) pulls like
 
 ### Cherry on top — the Go/No-Go Memo
 Now that we have a counted list, the memo is credible instead of hand-wavy:
-> **Attend, don't sponsor over $12K.** 18 of your accounts are present, including 6 open opps worth **$640K** and 4 closed-won lookalikes. Break-even: **4 qualified meetings** — and 6 of those accounts are already in pipeline. At a $25K booth, skip it: your accounts are here whether you sponsor or not. Send two reps and host a dinner.
+> **Sponsor up to ~$32K.** 7 CRM accounts have public ASSP Safety 2026 speaker/sponsor evidence, including 2 open opps worth **$350K**. Break-even: **7 qualified meetings**. At a $25K quote, the sponsor case clears because the evidence shows real account presence; the WOC supplier-control event returns skip instead of pretending the same CRM is present everywhere.
 
 ---
 
@@ -75,13 +75,13 @@ Now that we have a counted list, the memo is credible instead of hand-wavy:
 Fictional-but-realistic company: **SafeSite OS**, sells safety/compliance software to mid-market construction contractors.
 
 1. Upload SafeSite's CRM CSV (closed-won + open opps + target accounts). Schrute builds the Revenue Profile live.
-2. Drop in a **real** event with a public exhibitor list (World of Concrete / an ASSP safety show / a regional construction event) + the $25K quote.
-3. **The wow:** in ~60s a board lights up — *"18 of your accounts are at this event. 6 are open deals worth $640K."*
-4. Click **Turner Construction** → drawer shows booth, the matched open opp, **Jane Doe, VP Safety — jane.doe@turner.com ✓ verified** (Fiber), and a drafted meeting request (OpenAI).
+2. Drop in a **real** event with public speaker/sponsor evidence (ASSP Safety 2026) + the $25K quote.
+3. **The wow:** in ~60s a board lights up - *"7 CRM accounts have public presence evidence at this event. 2 are open deals worth $350K."*
+4. Click **PG&E** or **Rosendin** -> drawer shows the ASSP session/sponsor evidence, the matched account, and the outreach sidecar area for Fiber/OpenAI once enrichment is wired.
 5. Hit **Export / Push to CRM**.
-6. Close on the memo. Judge thinks: *"I've watched people make this call badly — this is exactly the workflow that saves real money and creates real meetings."*
+6. Run the WOC supplier-control event and show **skip**. Judge thinks: *"This is not a yes-machine; it says no when the public evidence does not support the CRM match."*
 
-Engineer the wow: pin one real event with a known-good exhibitor list, hand-seed the CRM so ~15–20 accounts match, cache Fiber results for demo accounts but live-enrich one on stage for credibility. Latency reads as intelligence if we stream progress ("142 exhibitors → 18 are yours → enriching…").
+Engineer the wow: pin one real event where the buyer companies genuinely show up in public speaker/sponsor evidence, keep 5-7 undeniable Tier-1 matches, add a couple Tier-2 lookalikes, and leave visible non-matching CRM accounts. Latency reads as intelligence if we stream progress ("source evidence -> account matches -> underwriting memo").
 
 ---
 
@@ -126,7 +126,7 @@ npx convex dev               # terminal 1 — Convex backend
 npm run dev                  # terminal 2 — Next.js
 ```
 
-**Build against mocks immediately:** `lib/mocks.ts` exports `mockDemoBundle` (SafeSite OS × World of Concrete). **Contract queries:** `convex/contracts.ts`. **AI schemas:** `lib/aiSchemas.ts`. **Company resolution seam:** `lib/resolveCompany.ts`.
+**Build against mocks immediately:** UI mocks live in `lib/mocks.ts`; the headless real-data spine demo lives in `convex/lib/demoSeed.ts` plus `data/source_packs/`. **Contract queries:** `convex/contracts.ts`. **AI schemas:** `lib/aiSchemas.ts`. **Company resolution seam:** `lib/resolveCompany.ts`.
 
 | Seam | Location | Consumer |
 | --- | --- | --- |
@@ -230,7 +230,7 @@ Clean seam: develop against `lib/mocks.ts` `mockAccountMatchesForEnrichment` fro
 
 Once we know which events hold your pipeline, the obvious platform move:
 
-- **Portfolio Planner (the reframed trip idea).** Not "save on flights" — that's a vitamin. The real version is **pipeline concentration**: *"Your $640K of present pipeline clusters across 3 Q3 shows in the Midwest — send your two best reps to those back-to-back, skip the other 7."* Travel efficiency is the side effect; focusing reps where pipeline actually is, is the point. Cheap to build *on top of* the matcher (it's a sort/cluster over matched value + dates + geography), worthless without it. **V2, never on the hackathon critical path** — at most a static mock screen if Sunday has spare hours.
+- **Portfolio Planner (the reframed trip idea).** Not "save on flights" — that's a vitamin. The real version is **pipeline concentration**: *"Your $350K of present pipeline clusters across 3 Q3 shows in the Midwest — send your two best reps to those back-to-back, skip the other 7."* Travel efficiency is the side effect; focusing reps where pipeline actually is, is the point. Cheap to build *on top of* the matcher (it's a sort/cluster over matched value + dates + geography), worthless without it. **V2, never on the hackathon critical path** — at most a static mock screen if Sunday has spare hours.
 - HubSpot/Salesforce write-back and live sync.
 - Event discovery (suggest shows your pipeline clusters at, that you're not already considering).
 - Post-event feedback loop: matched accounts → actual meetings → actual pipeline. That outcome graph is the long-term moat and makes the scoring vertical-specific over time.
@@ -247,16 +247,16 @@ Value is attributable (meetings booked, pipeline influenced), so it anchors to p
 | Growth | $1K–$3K / mo | Active event calendar (5–20 events/quarter) |
 | Enterprise | $10K–$50K / yr | Multi-region field marketing + CRM integration |
 
-**Distribution:** free "who's at [World of Concrete] from your pipeline?" scorecards as a lead magnet, founder-led outbound to companies already exhibiting, field-marketing/RevOps communities.
+**Distribution:** free "which of my accounts have evidence at [event]?" scorecards as a lead magnet, founder-led outbound to companies already making event spend decisions, field-marketing/RevOps communities.
 
 ---
 
 ## Product voice
 
 Blunt, funny, evidence-backed — but the evidence is a real account, not a guess.
-- "6 of your open deals are walking this floor. Go book them."
+- "2 open deals have public presence evidence at this event. Go book them."
 - "High logo density, only 2 are yours. Send one rep, skip the booth."
-- "Turner's here and you have a $180K deal open with them. Why are you reading this?"
+- "PG&E is on the ASSP program and you have a $140K deal open. Why are you reading this?"
 - "Net-new: 9 ICP-fit exhibitors not in your CRM. That's your prospecting list, pre-qualified."
 - "False. This event is popular, not profitable. Skip unless your goal is competitor-watching."
 
@@ -264,7 +264,7 @@ Blunt, funny, evidence-backed — but the evidence is a real account, not a gues
 
 ## North Star
 
-Teams stop walking into events blind and hoping. They walk in with a worklist: *these are my accounts, this is the human, this is the ask.* Schrute wins when "we have a booth at X" turns, automatically, into "here are the 18 meetings to book before we land."
+Teams stop walking into events blind and hoping. They walk in with a worklist: *these are my accounts, this is the human, this is the ask.* Schrute wins when "we have a booth at X" turns, automatically, into "here are the right meetings to book before we land."
 
 ---
 
