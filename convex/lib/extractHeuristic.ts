@@ -187,33 +187,3 @@ export function extractCompaniesHeuristicWithCoverage(
 
   return { companies, coverage, parseableLines, parsedLines };
 }
-
-function pushCompany(
-  companies: ExtractedCompany[],
-  seen: Set<string>,
-  company: ExtractedCompany,
-) {
-  const key = `${company.role}:${company.companyName.toLowerCase()}`;
-  if (seen.has(key)) return;
-  seen.add(key);
-  companies.push(company);
-}
-
-function plainText(line: string): string {
-  return line
-    .trim()
-    .replace(/<br\s*\/?>/gi, " / ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&mdash;/g, "-")
-    .replace(/&#x27;/g, "'")
-    .replace(/\s+/g, " ");
-}
-
-function firstSponsorName(value: string): string {
-  return value
-    .replace(/\s+and\s+the\s+.+$/i, "")
-    .replace(/\s+and\s+.+Practice Specialty.*$/i, "")
-    .trim();
-}

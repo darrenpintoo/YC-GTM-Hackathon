@@ -63,7 +63,6 @@ const SIM_STEPS: { step: JobStep; message: string }[] = [
 
 export default function Home() {
   const startRun = useAction(api.orchestrate.startRun);
-  const startWarmDemo = useAction(api.orchestrate.startWarmDemo);
   const { mode, scenario } = useDataMode();
   const [runSlug, setRunSlug] = React.useState<string | null>(null);
   const { bundle, isLoading } = useEventBundle(
@@ -193,39 +192,6 @@ export default function Home() {
     }
   }
 
-  async function handleWarmDemo() {
-    setError(null);
-    setPhase("running");
-    setSimJobs([]);
-    setIntent({
-      objective: "spend_decision",
-      options: ["attend", "exhibit", "sponsor"],
-    });
-    toast("Running warmed ASSP demo — replaying cached API responses…");
-
-    if (mode === "mock") {
-      setPipelineRunning(false);
-      runMockSimulation(bundle?.event._id ?? "mock_event");
-      return;
-    }
-
-    setPipelineRunning(true);
-    setRunSlug(null);
-    try {
-      const result = await startWarmDemo({
-        objective: "spend_decision",
-        participationOptions: ["attend", "exhibit", "sponsor"],
-      });
-      setRunSlug(result.slug);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Warm demo failed";
-      setError(message);
-      toast.error(message);
-      setPhase("intro");
-      setPipelineRunning(false);
-    }
-  }
-
   function reset() {
     if (timer.current) clearTimeout(timer.current);
     setPhase("intro");
@@ -259,9 +225,7 @@ export default function Home() {
             <PageTransition phaseKey="intro">
               <UploadIntro
                 running={pipelineRunning}
-                warmDemoRunning={pipelineRunning}
                 onRun={handleRun}
-                onWarmDemo={handleWarmDemo}
               />
             </PageTransition>
           ) : null}

@@ -56,15 +56,11 @@ const PARTICIPATION_ICONS: Record<ParticipationKey, React.ReactNode> = {
 type UploadIntroProps = {
   running?: boolean;
   onRun: (payload: IntroPayload) => void;
-  onWarmDemo?: () => void;
-  warmDemoRunning?: boolean;
 };
 
 export function UploadIntro({
   running,
   onRun,
-  onWarmDemo,
-  warmDemoRunning,
 }: UploadIntroProps) {
   const [csvText, setCsvText] = React.useState<string | undefined>();
   const [csvFileName, setCsvFileName] = React.useState<string | undefined>();
@@ -394,7 +390,7 @@ export function UploadIntro({
             <Button
               size="lg"
               className="w-full"
-              disabled={!ready || running || warmDemoRunning}
+              disabled={!ready || running}
               onClick={handleRun}
             >
               {running ? (
@@ -409,25 +405,6 @@ export function UploadIntro({
                 </>
               )}
             </Button>
-            {onWarmDemo ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                className="w-full"
-                disabled={running || warmDemoRunning}
-                onClick={onWarmDemo}
-              >
-                {warmDemoRunning ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Running warmed ASSP demo…
-                  </>
-                ) : (
-                  "Run warmed demo (ASSP Safety 2026)"
-                )}
-              </Button>
-            ) : null}
             <button
               type="button"
               onClick={loadDemo}
