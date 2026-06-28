@@ -8,6 +8,7 @@ import {
   PresenceBadge,
   TierBadge,
 } from "@/components/schrute/atoms";
+import { MatchListPanel } from "@/components/schrute/MatchListPanel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROLE_LABEL, TIER_META } from "@/lib/labels";
 import type { AccountMatch, Contact } from "@/lib/types";
@@ -69,14 +70,23 @@ export function AccountBoard({
         />
       ) : null}
       {tier2.length > 0 ? (
-        <TierGroup
-          tier="tier2_icp"
-          count={tier2.length}
-          matches={tier2}
-          contactByMatch={contactByMatch}
-          selectedId={selectedId}
-          onSelect={onSelect}
-        />
+        tier2.length > 6 ? (
+          <IcpTierSection
+            count={tier2.length}
+            matches={tier2}
+            contacts={contacts}
+            onSelect={onSelect}
+          />
+        ) : (
+          <TierGroup
+            tier="tier2_icp"
+            count={tier2.length}
+            matches={tier2}
+            contactByMatch={contactByMatch}
+            selectedId={selectedId}
+            onSelect={onSelect}
+          />
+        )
       ) : null}
       {recurring.length > 0 ? (
         <RecurringGroup
@@ -88,6 +98,41 @@ export function AccountBoard({
         />
       ) : null}
     </div>
+  );
+}
+
+function IcpTierSection({
+  count,
+  matches,
+  contacts,
+  onSelect,
+}: {
+  count: number;
+  matches: AccountMatch[];
+  contacts: Contact[];
+  onSelect: (match: AccountMatch) => void;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-baseline justify-between">
+        <div className="flex items-center gap-2">
+          <TierBadge tier="tier2_icp" />
+          <span className="text-sm font-medium">
+            {count} {count === 1 ? "account" : "accounts"}
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {TIER_META.tier2_icp.blurb}
+        </span>
+      </div>
+      <MatchListPanel
+        matches={matches}
+        contacts={contacts}
+        onOpenAccount={onSelect}
+        previewCount={6}
+        inlineMax={6}
+      />
+    </section>
   );
 }
 
@@ -229,6 +274,12 @@ function AccountCard({
             {ROLE_LABEL[match.role]}
             {match.boothOrSession ? ` · ${match.boothOrSession}` : ""}
           </p>
+          {match.contactName ? (
+            <p className="mt-1 text-xs text-foreground/80">
+              {match.contactTitle ? `${match.contactTitle}: ` : ""}
+              <span className="font-medium">{match.contactName}</span>
+            </p>
+          ) : null}
           {match.presence === "recurring" ? (
             <div className="mt-2">
               <PresenceBadge

@@ -80,7 +80,16 @@ export const eventExtractionSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["companyName", "role", "boothOrSession", "quote", "confidence"],
+          required: [
+            "companyName",
+            "role",
+            "boothOrSession",
+            "quote",
+            "confidence",
+            "contactName",
+            "contactTitle",
+            "contactQuote",
+          ],
           properties: {
             companyName: { type: "string" },
             role: {
@@ -99,6 +108,20 @@ export const eventExtractionSchema = {
               type: "number",
               minimum: 0,
               maximum: 1,
+            },
+            contactName: {
+              type: "string",
+              description:
+                "Named person at this company in the source (speaker, rep). Use empty string if none named.",
+            },
+            contactTitle: {
+              type: "string",
+              description: "Person's title/role if named; empty string otherwise.",
+            },
+            contactQuote: {
+              type: "string",
+              description:
+                "Verbatim line naming this person; empty string if no person named.",
             },
           },
         },
@@ -367,6 +390,56 @@ export type AttendeeReasonsOutput = {
   reasons: Array<{ index: number; reason: string }>;
 };
 
+/** Find a public decision-maker profile for a matched company (web_search tool). */
+export const decisionMakerSearchSchema = {
+  name: "decision_maker_search",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["people"],
+    properties: {
+      people: {
+        type: "array",
+        description: "One entry per input company index.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "fullName", "title", "linkedinUrl"],
+          properties: {
+            index: {
+              type: "number",
+              description: "0-based index of the company in the input list.",
+            },
+            fullName: {
+              type: "string",
+              description: "Person's name from a public source; empty if not found.",
+            },
+            title: {
+              type: "string",
+              description: "Current title/role; empty if unknown.",
+            },
+            linkedinUrl: {
+              type: "string",
+              description:
+                "Public LinkedIn /in/ URL; empty if not found. Never invent a URL.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type DecisionMakerSearchOutput = {
+  people: Array<{
+    index: number;
+    fullName: string;
+    title: string;
+    linkedinUrl: string;
+  }>;
+};
+
 /** Prospective attendees surfaced from public web posts (web_search tool). */
 export const attendeeSearchSchema = {
   name: "attendee_signals",
@@ -468,6 +541,9 @@ export type EventExtractionCompany = {
   boothOrSession: string;
   quote: string;
   confidence: number;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
 };
 
 export type EventExtractionFact = {

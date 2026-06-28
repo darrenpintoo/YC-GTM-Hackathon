@@ -73,6 +73,9 @@ export type EventCompanyLite = {
   sourceUrl: string;
   presence?: "confirmed" | "recurring";
   editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
 };
 
 export type RevenueProfileLite = {
@@ -93,6 +96,9 @@ export type MatchCandidate = {
   confidence: number;
   presence?: "confirmed" | "recurring";
   editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
   matchedOppValue?: number;
   eventCompanyId: string;
   evidence: {
@@ -245,6 +251,9 @@ function buildMatch(
     confidence,
     presence: company.presence ?? "confirmed",
     editionLabel: company.editionLabel,
+    contactName: company.contactName,
+    contactTitle: company.contactTitle,
+    contactQuote: company.contactQuote,
     matchedOppValue: crm.openOppValue,
     eventCompanyId: company._id,
     evidence: {
@@ -271,6 +280,9 @@ function buildNetNewMatch(
     confidence: company.confidence,
     presence: company.presence ?? "confirmed",
     editionLabel: company.editionLabel,
+    contactName: company.contactName,
+    contactTitle: company.contactTitle,
+    contactQuote: company.contactQuote,
     eventCompanyId: company._id,
     evidence: {
       sourceDocumentId: company.sourceDocumentId,

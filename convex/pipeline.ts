@@ -141,6 +141,9 @@ async function runMultiDocExtraction(
       confidence: number;
       presence: "confirmed" | "recurring";
       editionLabel?: string;
+      contactName?: string;
+      contactTitle?: string;
+      contactQuote?: string;
     }> = [];
     const facts: Array<{
       sourceDocumentId: Id<"sourceDocument">;
@@ -164,7 +167,7 @@ async function runMultiDocExtraction(
       const results = await Promise.all(
         chunk.map((doc) =>
           callOpenAiJson<EventExtractionOutput>({
-            system: `${AI_GUARDRAILS}\nExtract every company that the source proves is present at the event (exhibitor, sponsor, or speaker). For each, copy a verbatim quote from the source as proof. Use "unknown" for any field not in the source.`,
+            system: `${AI_GUARDRAILS}\nExtract every company that the source proves is present at the event (exhibitor, sponsor, or speaker). For each, copy a verbatim quote from the source as proof. If the source names a person at that company (speaker, booth rep, keynote), fill contactName/contactTitle/contactQuote with a verbatim line — otherwise use empty strings. Use "unknown" for any field not in the source.`,
             user: `Source document text:\n\n${doc.textContent.slice(0, MAX_SOURCE_CHARS)}`,
             responseSchema: eventExtractionSchema,
           }).then((ai) => ({ doc, ai })),
@@ -177,11 +180,24 @@ async function runMultiDocExtraction(
           : "confirmed";
         if (ai?.companies) {
           for (const c of ai.companies) {
+            const cn = c.contactName?.trim();
+            const ct = c.contactTitle?.trim();
+            const cq = c.contactQuote?.trim();
             companies.push({
               sourceDocumentId: doc._id,
+              companyName: c.companyName,
+              role: c.role,
+              boothOrSession: c.boothOrSession,
+              quote: c.quote,
+              confidence: c.confidence,
               presence,
               editionLabel: doc.editionLabel ?? undefined,
-              ...c,
+              contactName:
+                cn && cn !== "unknown" ? cn : undefined,
+              contactTitle:
+                ct && ct !== "unknown" ? ct : undefined,
+              contactQuote:
+                cq && cq !== "unknown" ? cq : undefined,
             });
           }
         }

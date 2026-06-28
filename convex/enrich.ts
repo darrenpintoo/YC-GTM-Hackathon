@@ -9,13 +9,28 @@ import { hasFiber, revealContact } from "./lib/fiber";
 import {
   attendeeSearchSchema,
   attendeeReasonsSchema,
+  decisionMakerSearchSchema,
   speakerExtractionSchema,
   type AttendeeSearchOutput,
   type AttendeeReasonsOutput,
+  type DecisionMakerSearchOutput,
   type SpeakerExtractionOutput,
 } from "../lib/aiSchemas";
 
 const MAX_FIBER_REVEALS = 12;
+const MAX_FIBER_DECISION_MAKERS = 12;
+const MAX_TIER2_DM = 20;
+
+type ContactPayload = {
+  accountMatchId: Id<"accountMatch">;
+  fullName: string;
+  title: string;
+  email?: string;
+  phone?: string;
+  linkedinUrl?: string;
+  verification: "verified" | "likely" | "unknown";
+  fiberRawJson?: string;
+};
 
 type EnrichResult = { attendeeCount: number; contactCount: number };
 
@@ -60,30 +75,32 @@ export const run = internalAction({
         return { attendeeCount: 0, contactCount: 0 };
       }
 
-      // Always run discovery: public posts (web search) + corpus speakers,
-      // seeded with the ICP and any matched companies. Both degrade gracefully.
+      // Source-named contacts from extraction (speaker pages, bios).
+      const contactByMatch = new Map<Id<"accountMatch">, ContactPayload>();
+      for (const m of inputs.matches) {
+        if (!m.contactName?.trim()) continue;
+        upsertContact(contactByMatch, {
+          accountMatchId: m._id,
+          fullName: m.contactName.trim(),
+          title: m.contactTitle?.trim() || "Decision maker",
+          verification: "likely",
+          fiberRawJson: m.contactQuote
+            ? JSON.stringify({ sourceQuote: m.contactQuote })
+            : undefined,
+        });
+      }
+
+      // Public posts + corpus speakers (best-effort).
       const [posted, speakers] = await Promise.all([
         discoverAttendees(inputs),
         gatherCorpusSpeakers(inputs),
       ]);
 
-      // Merge, deduping by name (web-post signal wins over a bare speaker row).
       const byName = new Map<string, DiscoveredAttendee>();
       for (const s of speakers) byName.set(s.fullName.toLowerCase(), s);
       for (const p of posted) byName.set(p.fullName.toLowerCase(), p);
       const attendees = Array.from(byName.values());
 
-      if (attendees.length === 0) {
-        await ctx.runMutation(internal.enrich.markStatus, {
-          eventId: args.eventId,
-          status: "skipped",
-          message: "No public attendance signals found yet",
-          progress: 100,
-        });
-        return { attendeeCount: 0, contactCount: 0 };
-      }
-
-      // Map each attendee to a matched account by fuzzy company name.
       const mapped = attendees.map((a) => {
         const best = bestMatch(a.companyName, inputs.matches);
         return {
@@ -93,9 +110,6 @@ export const run = internalAction({
         };
       });
 
-      // Reveal real contact details for EVERY LinkedIn-backed attendee (not
-      // just matched accounts), in parallel, capped to keep latency bounded.
-      // Keyed by profile URL so we can fold enrichment back onto each person.
       const revealedByUrl = new Map<
         string,
         {
@@ -116,7 +130,6 @@ export const run = internalAction({
               m.attendee.profileUrl &&
               /linkedin\.com\/in\//i.test(m.attendee.profileUrl),
           )
-          // Matched accounts first, then by confidence.
           .sort((a, b) => {
             const am = a.accountMatchId ? 0 : 1;
             const bm = b.accountMatchId ? 0 : 1;
@@ -125,55 +138,59 @@ export const run = internalAction({
           })
           .slice(0, MAX_FIBER_REVEALS);
 
-        await ctx.runMutation(internal.enrich.markStatus, {
-          eventId: args.eventId,
-          status: "running",
-          message: `Revealing contacts via Fiber (${revealTargets.length})`,
-          progress: 65,
-        });
+        if (revealTargets.length > 0) {
+          await ctx.runMutation(internal.enrich.markStatus, {
+            eventId: args.eventId,
+            status: "running",
+            message: `Revealing attendee contacts (${revealTargets.length})`,
+            progress: 55,
+          });
 
-        const revealed = await Promise.all(
-          revealTargets.map(async (m) => ({
-            url: m.attendee.profileUrl,
-            data: await revealContact(m.attendee.profileUrl),
-          })),
-        );
-        for (const r of revealed) {
-          if (r.data) revealedByUrl.set(r.url, r.data);
+          const revealed = await Promise.all(
+            revealTargets.map(async (m) => ({
+              url: m.attendee.profileUrl,
+              data: await revealContact(m.attendee.profileUrl),
+            })),
+          );
+          for (const r of revealed) {
+            if (r.data) revealedByUrl.set(r.url, r.data);
+          }
         }
       }
 
-      // Generate one short, grounded "why a good match" line per attendee.
-      const reasonByIndex = await generateMatchReasons(inputs, mapped);
-
-      // Contacts table (for matched accounts) — keeps existing behavior.
-      const contacts: Array<{
-        accountMatchId: Id<"accountMatch">;
-        fullName: string;
-        title: string;
-        email?: string;
-        phone?: string;
-        linkedinUrl?: string;
-        verification: "verified" | "likely" | "unknown";
-        fiberRawJson?: string;
-      }> = [];
       for (const m of mapped) {
         if (!m.accountMatchId) continue;
         const revealed = m.attendee.profileUrl
           ? revealedByUrl.get(m.attendee.profileUrl)
           : undefined;
         if (!revealed) continue;
-        contacts.push({
+        upsertContact(contactByMatch, {
           accountMatchId: m.accountMatchId,
           fullName: m.attendee.fullName,
           title: m.attendee.title,
           email: revealed.email,
           phone: revealed.phone,
           linkedinUrl: m.attendee.profileUrl,
-          verification: revealed.emailStatus === "valid" ? "verified" : "likely",
+          verification:
+            revealed.emailStatus === "valid" ? "verified" : "likely",
           fiberRawJson: revealed.raw,
         });
       }
+
+      // Decision makers for CRM + top ICP accounts (web search + Fiber).
+      await ctx.runMutation(internal.enrich.markStatus, {
+        eventId: args.eventId,
+        status: "running",
+        message: "Finding decision makers at matched accounts",
+        progress: 72,
+      });
+      const dmContacts = await discoverDecisionMakers(inputs);
+      for (const c of dmContacts) upsertContact(contactByMatch, c);
+
+      const reasonByIndex =
+        mapped.length > 0
+          ? await generateMatchReasons(inputs, mapped)
+          : new Map<number, string>();
 
       const result: EnrichResult = await ctx.runMutation(internal.enrich.save, {
         eventId: args.eventId,
@@ -201,7 +218,14 @@ export const run = internalAction({
             matchReason: reasonByIndex.get(i),
           };
         }),
-        contacts,
+        contacts: Array.from(contactByMatch.values()),
+      });
+
+      await ctx.runMutation(internal.enrich.markStatus, {
+        eventId: args.eventId,
+        status: "completed",
+        message: `${result.attendeeCount} attendees · ${result.contactCount} contacts`,
+        progress: 100,
       });
 
       return result;
@@ -238,9 +262,113 @@ type EnrichInputs = {
   matches: Array<{
     _id: Id<"accountMatch">;
     companyName: string;
+    domain?: string;
     tier: "tier1_crm" | "tier2_icp";
+    fitScore: number;
+    contactName?: string;
+    contactTitle?: string;
+    contactQuote?: string;
   }>;
 };
+
+function contactScore(c: ContactPayload): number {
+  let score = c.verification === "verified" ? 3 : c.verification === "likely" ? 1 : 0;
+  if (c.email) score += 2;
+  if (c.phone) score += 1;
+  return score;
+}
+
+function upsertContact(
+  map: Map<Id<"accountMatch">, ContactPayload>,
+  contact: ContactPayload,
+) {
+  const existing = map.get(contact.accountMatchId);
+  if (!existing || contactScore(contact) > contactScore(existing)) {
+    map.set(contact.accountMatchId, contact);
+  }
+}
+
+/** Web search + Fiber for tier1 CRM and top tier2 ICP accounts. */
+async function discoverDecisionMakers(
+  inputs: EnrichInputs,
+): Promise<ContactPayload[]> {
+  const tier1 = inputs.matches.filter((m) => m.tier === "tier1_crm");
+  const tier2 = inputs.matches
+    .filter((m) => m.tier === "tier2_icp")
+    .sort((a, b) => b.fitScore - a.fitScore)
+    .slice(0, MAX_TIER2_DM);
+  const targets = [...tier1, ...tier2];
+  if (targets.length === 0) return [];
+
+  const companies = targets.map((m, index) => ({
+    index,
+    companyName: m.companyName,
+    domain: m.domain ?? "",
+    hasSourceContact: Boolean(m.contactName),
+  }));
+
+  try {
+    const ai = await callOpenAiWebSearch<DecisionMakerSearchOutput>({
+      instructions: [
+        "You are a B2B sales researcher.",
+        "For each company, use web search to find ONE public LinkedIn profile of a likely decision maker matching the seller's buyer titles.",
+        "Return real linkedin.com/in/ URLs only — never invent a person or URL.",
+        "If no credible profile is found, return empty strings for that index.",
+      ].join(" "),
+      input: [
+        `Event context: ${inputs.event.name}`,
+        `Target buyer titles: ${inputs.buyerTitles.slice(0, 8).join(", ") || "VP, Director"}`,
+        `Companies (JSON): ${JSON.stringify(companies)}`,
+      ].join("\n"),
+      responseSchema: decisionMakerSearchSchema,
+    });
+
+    const people = (ai?.people ?? []).filter(
+      (p) =>
+        typeof p.index === "number" &&
+        p.index >= 0 &&
+        p.index < targets.length &&
+        p.linkedinUrl?.includes("linkedin.com/in/"),
+    );
+
+    const toReveal = people.slice(0, MAX_FIBER_DECISION_MAKERS);
+    const revealed = await Promise.all(
+      toReveal.map(async (person) => {
+        const target = targets[person.index]!;
+        const fiber =
+          hasFiber() && person.linkedinUrl
+            ? await revealContact(person.linkedinUrl)
+            : null;
+        return { target, person, fiber };
+      }),
+    );
+
+    const out: ContactPayload[] = [];
+    for (const row of revealed) {
+      const name = row.person.fullName?.trim();
+      if (!name && !row.fiber?.email) continue;
+      out.push({
+        accountMatchId: row.target._id,
+        fullName: name || "Decision maker",
+        title:
+          row.person.title?.trim() ||
+          row.fiber?.title ||
+          inputs.buyerTitles[0] ||
+          "Decision maker",
+        email: row.fiber?.email,
+        phone: row.fiber?.phone,
+        linkedinUrl: row.person.linkedinUrl || undefined,
+        verification:
+          row.fiber?.emailStatus === "valid" ? "verified" : "likely",
+        fiberRawJson: row.fiber?.raw,
+      });
+    }
+    return out;
+  } catch (err) {
+    console.warn("Decision maker discovery failed", err);
+    return [];
+  }
+}
 
 async function discoverAttendees(
   inputs: EnrichInputs,
@@ -458,7 +586,12 @@ export const getInputs = internalQuery({
       matches: matches.map((m) => ({
         _id: m._id,
         companyName: m.companyName,
+        domain: m.domain,
         tier: m.tier,
+        fitScore: m.fitScore,
+        contactName: m.contactName,
+        contactTitle: m.contactTitle,
+        contactQuote: m.contactQuote,
       })),
     };
   },

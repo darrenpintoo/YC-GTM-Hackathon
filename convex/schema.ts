@@ -118,6 +118,10 @@ export default defineSchema({
       v.union(v.literal("confirmed"), v.literal("recurring")),
     ),
     editionLabel: v.optional(v.string()),
+    // Named person in source tied to this company (speaker, rep, etc.).
+    contactName: v.optional(v.string()),
+    contactTitle: v.optional(v.string()),
+    contactQuote: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_event", ["eventId"])

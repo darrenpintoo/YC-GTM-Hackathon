@@ -104,6 +104,9 @@ export const accountMatchFields = {
   // "confirmed" present this year vs "recurring" (likely to return, from a past edition).
   presence: v.optional(presenceValidator),
   editionLabel: v.optional(v.string()),
+  contactName: v.optional(v.string()),
+  contactTitle: v.optional(v.string()),
+  contactQuote: v.optional(v.string()),
   evidence: v.array(evidenceValidator),
   matchedOppValue: v.optional(v.number()),
   eventCompanyId: v.optional(v.id("eventCompany")),

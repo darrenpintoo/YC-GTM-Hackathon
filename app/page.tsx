@@ -28,6 +28,7 @@ import { ExportBar } from "@/components/schrute/ExportBar";
 import { JobProgress } from "@/components/schrute/JobProgress";
 import { OutcomeWheel } from "@/components/schrute/OutcomeWheel";
 import { ParticipationVerdict } from "@/components/schrute/ParticipationVerdict";
+import { PageTransition } from "@/components/schrute/PageTransition";
 import { PortfolioPlanner } from "@/components/schrute/PortfolioPlanner";
 import { RevenueProfilePanel } from "@/components/schrute/RevenueProfilePanel";
 import { UploadIntro, type IntroPayload } from "@/components/schrute/UploadIntro";
@@ -221,27 +222,33 @@ export default function Home() {
           ) : null}
 
           {phase === "intro" ? (
-            <UploadIntro running={false} onRun={handleRun} />
+            <PageTransition phaseKey="intro">
+              <UploadIntro running={false} onRun={handleRun} />
+            </PageTransition>
           ) : null}
 
           {phase === "running" ? (
-            <RunningView
-              bundle={bundle}
-              jobs={jobsForRunning}
-              loading={isLoading || pipelineRunning}
-              mode={mode}
-            />
+            <PageTransition phaseKey="running">
+              <RunningView
+                bundle={bundle}
+                jobs={jobsForRunning}
+                loading={isLoading || pipelineRunning}
+                mode={mode}
+              />
+            </PageTransition>
           ) : null}
 
           {phase === "results" && bundle ? (
-            <ResultsView
-              bundle={bundle}
-              intent={intent}
-              mode={mode}
-              selectedId={selected?._id ?? null}
-              onSelect={openMatch}
-              onReset={reset}
-            />
+            <PageTransition phaseKey="results">
+              <ResultsView
+                bundle={bundle}
+                intent={intent}
+                mode={mode}
+                selectedId={selected?._id ?? null}
+                onSelect={openMatch}
+                onReset={reset}
+              />
+            </PageTransition>
           ) : null}
 
           {phase === "results" && !bundle ? (
@@ -276,6 +283,21 @@ function RunningView({
   loading: boolean;
   mode: "mock" | "live";
 }) {
+  const completedCount = jobs.filter((j) => j.status === "completed").length;
+  const [stepPulse, setStepPulse] = React.useState(false);
+  const prevCompleted = React.useRef(completedCount);
+
+  React.useEffect(() => {
+    if (completedCount > prevCompleted.current) {
+      setStepPulse(true);
+      const timer = window.setTimeout(() => setStepPulse(false), 700);
+      prevCompleted.current = completedCount;
+      return () => window.clearTimeout(timer);
+    }
+    prevCompleted.current = completedCount;
+    return undefined;
+  }, [completedCount]);
+
   return (
     <div className="space-y-4">
       {mode === "live" ? (
@@ -307,7 +329,12 @@ function RunningView({
             Matching public event evidence against your pipeline.
           </p>
         </CardHeader>
-        <CardContent>
+        <CardContent
+          className={cn(
+            "rounded-lg transition-colors duration-500 motion-reduce:transition-none",
+            stepPulse && "bg-success/5",
+          )}
+        >
           {loading && jobs.length === 0 ? (
             <Skeleton className="h-48 w-full rounded-lg" />
           ) : (
@@ -543,7 +570,10 @@ function ResultsView({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="event" className="space-y-6">
+        <TabsContent
+          value="event"
+          className="animate-in fade-in duration-300 motion-reduce:animate-none space-y-6"
+        >
           {score ? (
             <OutcomeWheel
               event={event}
@@ -575,7 +605,7 @@ function ResultsView({
             outreachDrafts={outreachDrafts}
           />
 
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div id="accounts-board" className="grid gap-6 lg:grid-cols-3 scroll-mt-24">
             <div className="lg:col-span-2">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Your accounts on the floor
@@ -598,7 +628,10 @@ function ResultsView({
           </div>
         </TabsContent>
 
-        <TabsContent value="people" className="space-y-4">
+        <TabsContent
+          value="people"
+          className="animate-in fade-in duration-300 motion-reduce:animate-none space-y-4"
+        >
           <div>
             <h2 className="font-display text-2xl">Who&apos;s posting about going</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -612,7 +645,10 @@ function ResultsView({
           <AttendeeList attendees={attendees} />
         </TabsContent>
 
-        <TabsContent value="sources" className="space-y-4">
+        <TabsContent
+          value="sources"
+          className="animate-in fade-in duration-300 motion-reduce:animate-none space-y-4"
+        >
           <div>
             <h2 className="font-display text-2xl">Sources we read</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -622,7 +658,10 @@ function ResultsView({
           <SourcesPanel sources={sourceDocuments} />
         </TabsContent>
 
-        <TabsContent value="portfolio">
+        <TabsContent
+          value="portfolio"
+          className="animate-in fade-in duration-300 motion-reduce:animate-none"
+        >
           <PortfolioPlanner />
         </TabsContent>
       </Tabs>

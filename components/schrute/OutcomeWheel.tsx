@@ -14,13 +14,8 @@ import {
 } from "lucide-react";
 
 import { AttendeeList } from "@/components/schrute/AttendeeList";
-import {
-  EvidenceChip,
-  PresenceBadge,
-  TierBadge,
-  VerdictBadge,
-} from "@/components/schrute/atoms";
-import { ROLE_LABEL } from "@/lib/labels";
+import { MatchListPanel } from "@/components/schrute/MatchListPanel";
+import { VerdictBadge } from "@/components/schrute/atoms";
 import type { LikelyAttendee } from "@/lib/data/demoBundle";
 import type {
   AccountMatch,
@@ -269,6 +264,7 @@ export function OutcomeWheel({
           expanded={expanded}
           onClose={() => setExpanded(null)}
           matches={matches}
+          confirmed={confirmed}
           tier1={tier1}
           tier2={tier2}
           recurringCrm={recurringCrm}
@@ -492,6 +488,7 @@ function StatCallout({
 function SignalPanel({
   expanded,
   matches,
+  confirmed,
   tier1,
   tier2,
   recurringCrm,
@@ -506,6 +503,7 @@ function SignalPanel({
   expanded: SignalKey | null;
   onClose: () => void;
   matches: AccountMatch[];
+  confirmed: AccountMatch[];
   tier1: AccountMatch[];
   tier2: AccountMatch[];
   recurringCrm: AccountMatch[];
@@ -520,9 +518,13 @@ function SignalPanel({
   if (!expanded) return null;
 
   const meta = PANEL_META[expanded];
+  const listProps = {
+    contacts,
+    onOpenAccount,
+  };
 
   return (
-    <div className="mt-6 animate-in fade-in-50 slide-in-from-top-1 rounded-xl border border-border bg-secondary/40 p-4 duration-300 sm:p-5">
+    <div className="mt-6 animate-in fade-in-50 slide-in-from-top-2 rounded-xl border border-border bg-secondary/40 p-4 duration-300 motion-reduce:animate-none sm:p-5">
       <div className="mb-3 flex items-center gap-2">
         {meta.icon}
         <h3 className="text-sm font-semibold">{meta.title}</h3>
@@ -537,20 +539,34 @@ function SignalPanel({
       ) : expanded === "sponsor" ? (
         <SponsorSignals score={score} event={event} />
       ) : expanded === "opps" ? (
-        <MatchSignals matches={openOpps} onOpenAccount={onOpenAccount} showValue />
+        <MatchListPanel matches={openOpps} showValue {...listProps} />
       ) : expanded === "icp" ? (
-        <MatchSignals matches={tier2} onOpenAccount={onOpenAccount} />
+        <MatchListPanel
+          matches={tier2}
+          showBoardLink
+          {...listProps}
+        />
       ) : expanded === "footprint" ? (
-        <MatchSignals matches={matches} onOpenAccount={onOpenAccount} />
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            {matches.length} total matches across the event — previewing confirmed
+            accounts ({confirmed.length}).
+          </p>
+          <MatchListPanel
+            matches={confirmed}
+            showBoardLink
+            {...listProps}
+          />
+        </div>
       ) : tier1.length > 0 ? (
-        <MatchSignals matches={tier1} onOpenAccount={onOpenAccount} />
+        <MatchListPanel matches={tier1} {...listProps} />
       ) : recurringCrm.length > 0 ? (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
             None of your CRM accounts are confirmed on this year&apos;s floor yet — but
             these attended past editions and are likely to return:
           </p>
-          <MatchSignals matches={recurringCrm} onOpenAccount={onOpenAccount} />
+          <MatchListPanel matches={recurringCrm} {...listProps} />
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -572,72 +588,6 @@ const PANEL_META: Record<SignalKey, { title: string; icon: React.ReactNode }> = 
   drafts: { title: "Outreach drafts ready to send", icon: <FileText className="size-4 text-foreground" /> },
   people: { title: "People posting about going", icon: <Users className="size-4 text-tier2" /> },
 };
-
-function MatchSignals({
-  matches,
-  onOpenAccount,
-  showValue,
-}: {
-  matches: AccountMatch[];
-  onOpenAccount?: (m: AccountMatch) => void;
-  showValue?: boolean;
-}) {
-  if (matches.length === 0)
-    return <p className="text-sm text-muted-foreground">No matches in this group.</p>;
-
-  return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      {matches.map((m) => (
-        <div
-          key={m._id}
-          role={onOpenAccount ? "button" : undefined}
-          tabIndex={onOpenAccount ? 0 : undefined}
-          onClick={onOpenAccount ? () => onOpenAccount(m) : undefined}
-          onKeyDown={
-            onOpenAccount
-              ? (e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onOpenAccount(m);
-                  }
-                }
-              : undefined
-          }
-          className={cn(
-            "rounded-lg border border-border bg-card p-3",
-            onOpenAccount && "cursor-pointer transition-colors hover:border-foreground/20",
-          )}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <span className="text-sm font-semibold">{m.companyName}</span>
-            <div className="flex shrink-0 items-center gap-1">
-              <PresenceBadge
-                presence={m.presence}
-                editionLabel={m.editionLabel}
-                className="text-[10px]"
-              />
-              <TierBadge tier={m.tier} className="text-[10px]" />
-            </div>
-          </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {ROLE_LABEL[m.role] ?? m.role}
-            {m.boothOrSession ? ` · ${m.boothOrSession}` : ""}
-            {showValue && m.matchedOppValue
-              ? ` · ${formatCurrency(m.matchedOppValue, { compact: true })}`
-              : ""}
-          </p>
-          {m.evidence?.length ? (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {m.evidence.map((e, i) => (
-                <EvidenceChip key={i} evidence={e} />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function DraftSignals({
   drafts,

@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 
 import { TierBadge } from "@/components/schrute/atoms";
+import { useDataMode } from "@/lib/data/DataModeContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -139,16 +140,35 @@ function DrawerBody({
   eventName?: string;
   onAddToWorklist?: (match: AccountMatch) => void;
 }) {
+  const { mode } = useDataMode();
   const [enriching, setEnriching] = React.useState(false);
   const [enrichedContacts, setEnrichedContacts] = React.useState<Contact[]>([]);
   const [enrichedDrafts, setEnrichedDrafts] = React.useState<OutreachDraft[]>(
     [],
   );
 
-  const allContacts = [...contacts, ...enrichedContacts];
+  const sourceContact: Contact | null =
+    contacts.length === 0 && match.contactName
+      ? ({
+          _id: `source_${match._id}` as Contact["_id"],
+          accountMatchId: match._id,
+          eventId: match.eventId,
+          fullName: match.contactName,
+          title: match.contactTitle ?? "Decision maker",
+          verification: "likely" as const,
+          createdAt: Date.now(),
+        } satisfies Contact)
+      : null;
+
+  const allContacts = [
+    ...contacts,
+    ...(sourceContact ? [sourceContact] : []),
+    ...enrichedContacts,
+  ];
   const allDrafts = [...drafts, ...enrichedDrafts];
 
   function findDecisionMakers() {
+    if (mode !== "mock") return;
     setEnriching(true);
     setTimeout(() => {
       const { contact, draft } = synthesizeEnrichment(match, eventName);
@@ -220,32 +240,40 @@ function DrawerBody({
           {allContacts.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-3 text-center">
               <p className="text-sm text-muted-foreground">
-                No contact yet — pull a likely decision-maker from the
-                enrichment sidecar.
+                {mode === "live"
+                  ? "Decision-maker enrichment runs with the pipeline — check back when the enrich step completes."
+                  : "No contact yet — pull a likely decision-maker from demo enrichment."}
               </p>
-              <Button
-                size="sm"
-                className="mt-2"
-                disabled={enriching}
-                onClick={findDecisionMakers}
-              >
-                {enriching ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Enriching…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="size-4" />
-                    Find decision-makers
-                  </>
-                )}
-              </Button>
+              {mode === "mock" ? (
+                <Button
+                  size="sm"
+                  className="mt-2"
+                  disabled={enriching}
+                  onClick={findDecisionMakers}
+                >
+                  {enriching ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Enriching…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-4" />
+                      Find decision-makers
+                    </>
+                  )}
+                </Button>
+              ) : null}
             </div>
           ) : (
             <ul className="space-y-3">
               {allContacts.map((c) => (
-                <ContactRow key={c._id} contact={c} />
+                <li
+                  key={c._id}
+                  className="animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none"
+                >
+                  <ContactRow contact={c} />
+                </li>
               ))}
             </ul>
           )}

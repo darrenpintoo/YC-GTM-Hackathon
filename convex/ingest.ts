@@ -12,6 +12,12 @@ function coerceRole(role: string): EventRole {
     : "unknown";
 }
 
+function normalizeContactField(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === "unknown") return undefined;
+  return trimmed;
+}
+
 const FACT_TYPES = [
   "exhibitor_list",
   "sponsor_list",
@@ -452,6 +458,9 @@ export const applyExtraction = internalMutation({
           v.union(v.literal("confirmed"), v.literal("recurring")),
         ),
         editionLabel: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+        contactTitle: v.optional(v.string()),
+        contactQuote: v.optional(v.string()),
       }),
     ),
     facts: v.array(
@@ -480,8 +489,11 @@ export const applyExtraction = internalMutation({
     // Dedupe by normalized name. Prefer a "confirmed" mention over "recurring",
     // then the highest-confidence one.
     const best = new Map<string, (typeof args.companies)[number]>();
-    const rank = (c: (typeof args.companies)[number]) =>
-      (c.presence === "recurring" ? 0 : 1) * 10 + c.confidence;
+    const rank = (c: (typeof args.companies)[number]) => {
+      let score = (c.presence === "recurring" ? 0 : 1) * 10 + c.confidence;
+      if (normalizeContactField(c.contactName)) score += 0.5;
+      return score;
+    };
     for (const company of args.companies) {
       if (!company.companyName.trim()) continue;
       const key = normalizeCompanyName(company.companyName);
@@ -508,6 +520,9 @@ export const applyExtraction = internalMutation({
         confidence: company.confidence,
         presence: company.presence ?? "confirmed",
         editionLabel: company.editionLabel,
+        contactName: normalizeContactField(company.contactName),
+        contactTitle: normalizeContactField(company.contactTitle),
+        contactQuote: normalizeContactField(company.contactQuote),
         createdAt: now,
       });
       inserted += 1;
@@ -591,6 +606,9 @@ export const listEventCompanies = query({
         v.union(v.literal("confirmed"), v.literal("recurring")),
       ),
       editionLabel: v.optional(v.string()),
+      contactName: v.optional(v.string()),
+      contactTitle: v.optional(v.string()),
+      contactQuote: v.optional(v.string()),
       createdAt: v.number(),
     }),
   ),

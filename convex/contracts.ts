@@ -69,6 +69,9 @@ export const listAccountMatchesByEvent = query({
         v.union(v.literal("confirmed"), v.literal("recurring")),
       ),
       editionLabel: v.optional(v.string()),
+      contactName: v.optional(v.string()),
+      contactTitle: v.optional(v.string()),
+      contactQuote: v.optional(v.string()),
       evidence: v.array(
         v.object({
           sourceDocumentId: v.id("sourceDocument"),

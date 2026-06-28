@@ -162,6 +162,9 @@ export type EventCompany = {
   confidence: number;
   presence?: "confirmed" | "recurring";
   editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
   createdAt: number;
 };
 
@@ -179,6 +182,9 @@ export type AccountMatch = {
   confidence: number;
   presence?: "confirmed" | "recurring";
   editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
   evidence: Evidence[];
   matchedOppValue?: number;
   eventCompanyId?: SchruteId<"eventCompany">;
