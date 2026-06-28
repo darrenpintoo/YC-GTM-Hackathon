@@ -153,6 +153,10 @@ export function useEventBundle(eventSlug?: string): UseEventBundleResult {
     api.contracts.listContactsByEvent,
     !isMock && eventId ? { eventId } : "skip",
   );
+  const liveOutreachDrafts = useQuery(
+    api.contracts.listOutreachDraftsByEvent,
+    !isMock && eventId ? { eventId } : "skip",
+  );
 
   if (isMock) {
     const demo = DEMO_SCENARIOS[scenario].bundle;
@@ -194,7 +198,11 @@ export function useEventBundle(eventSlug?: string): UseEventBundleResult {
   // samples so the UI is never empty — and flag it honestly.
   const liveAttendeeRows = (liveAttendees ?? []) as unknown as LiveAttendeeRow[];
   const liveContactRows = (liveContacts ?? []) as unknown as Contact[];
+  const liveDraftRows = (liveOutreachDrafts ?? []) as unknown as OutreachDraft[];
   const hasLiveAttendees = liveAttendeeRows.length > 0;
+  const hasLiveContacts = liveContactRows.length > 0;
+  const hasLiveDrafts = liveDraftRows.length > 0;
+  const usesMockEnrichment = !hasLiveAttendees && !hasLiveContacts;
 
   const bundle: EventBundle = {
     event: liveEvent as unknown as Event,
@@ -207,13 +215,13 @@ export function useEventBundle(eventSlug?: string): UseEventBundleResult {
     matches,
     score,
     memo,
-    contacts: hasLiveAttendees ? liveContactRows : demoFallback.contacts,
-    outreachDrafts: demoFallback.outreachDrafts,
+    contacts: hasLiveContacts ? liveContactRows : demoFallback.contacts,
+    outreachDrafts: hasLiveDrafts ? liveDraftRows : demoFallback.outreachDrafts,
     jobs: (liveJobs ?? []) as unknown as Job[],
     attendees: hasLiveAttendees
       ? liveAttendeeRows.map(toLikelyAttendee)
       : DEMO_SCENARIOS.attend.attendees,
-    usesMockEnrichment: !hasLiveAttendees,
+    usesMockEnrichment,
   };
 
   return {

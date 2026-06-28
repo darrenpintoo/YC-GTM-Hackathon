@@ -390,6 +390,42 @@ export type AttendeeReasonsOutput = {
   reasons: Array<{ index: number; reason: string }>;
 };
 
+/** One "why meet this account" line per matched company (batch after match). */
+export const accountMeetingReasonsSchema = {
+  name: "account_meeting_reasons",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["reasons"],
+    properties: {
+      reasons: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "reason"],
+          properties: {
+            index: {
+              type: "number",
+              description: "0-based index of the account in the input list.",
+            },
+            reason: {
+              type: "string",
+              description:
+                "One actionable sentence (max ~22 words) on why meet this company AT THIS EVENT. Ground in evidence — not a job description.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type AccountMeetingReasonsOutput = {
+  reasons: Array<{ index: number; reason: string }>;
+};
+
 /** Find a public decision-maker profile for a matched company (web_search tool). */
 export const decisionMakerSearchSchema = {
   name: "decision_maker_search",

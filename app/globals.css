@@ -4,56 +4,56 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Schrute brand theme — light editorial.
-  Warm paper background, ink type, a refined serif for display, and a calm
-  sage-green accent. The "outcome wheel" uses an indigo -> violet -> magenta
-  ring palette (known accounts -> event footprint -> ICP match).
-*/
+  Schrute brand theme — operator dashboard.
+  Crisp light surfaces, ink type, restrained industrial greens, and a small
+  violet accent for evidence layers. The UI should feel like a revenue decision
+  room, not a marketing page.
+ */
 
 :root {
-  --radius: 0.9rem;
+  --radius: 0.55rem;
 
-  --background: oklch(0.985 0.004 95);
-  --foreground: oklch(0.23 0.012 285);
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.19 0.012 260);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.23 0.012 285);
+  --card-foreground: oklch(0.19 0.012 260);
 
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.23 0.012 285);
+  --popover-foreground: oklch(0.19 0.012 260);
 
-  /* Ink primary (black buttons in the reference) */
-  --primary: oklch(0.24 0.012 285);
-  --primary-foreground: oklch(0.985 0.002 95);
+  /* Ink primary */
+  --primary: oklch(0.22 0.016 260);
+  --primary-foreground: oklch(0.99 0.001 250);
 
-  --secondary: oklch(0.955 0.006 95);
-  --secondary-foreground: oklch(0.28 0.012 285);
+  --secondary: oklch(0.955 0.004 250);
+  --secondary-foreground: oklch(0.26 0.012 260);
 
-  --muted: oklch(0.965 0.005 95);
-  --muted-foreground: oklch(0.52 0.012 285);
+  --muted: oklch(0.965 0.004 250);
+  --muted-foreground: oklch(0.48 0.012 260);
 
-  --accent: oklch(0.95 0.03 150);
-  --accent-foreground: oklch(0.38 0.07 150);
+  --accent: oklch(0.94 0.03 155);
+  --accent-foreground: oklch(0.34 0.08 155);
 
   --destructive: oklch(0.57 0.2 25);
   --destructive-foreground: oklch(0.99 0.01 25);
 
-  /* Sage green — verdicts / confidence / eyebrows */
-  --success: oklch(0.56 0.11 150);
+  /* Industrial green — verdicts / confidence */
+  --success: oklch(0.52 0.11 155);
   --success-foreground: oklch(0.99 0.01 150);
 
-  --warning: oklch(0.66 0.13 70);
+  --warning: oklch(0.68 0.13 72);
   --warning-foreground: oklch(0.99 0.01 70);
 
-  --border: oklch(0.92 0.004 285);
-  --input: oklch(0.9 0.004 285);
-  --ring: oklch(0.56 0.11 150);
+  --border: oklch(0.9 0.006 250);
+  --input: oklch(0.88 0.006 250);
+  --ring: oklch(0.52 0.11 155);
 
   /* Outcome-wheel ring palette */
-  --tier1: oklch(0.42 0.11 285); /* known accounts — indigo */
-  --tier2: oklch(0.56 0.16 295); /* event footprint — violet */
-  --icp: oklch(0.62 0.2 350); /* ICP match — magenta */
-  --brand: oklch(0.56 0.11 150); /* sage green */
+  --tier1: oklch(0.36 0.1 255); /* known accounts — blue ink */
+  --tier2: oklch(0.5 0.14 295); /* event footprint — violet */
+  --icp: oklch(0.55 0.16 340); /* ICP match — magenta */
+  --brand: oklch(0.52 0.11 155); /* industrial green */
 }
 
 @theme inline {
@@ -116,9 +116,9 @@ body {
 
   .grid-bg {
     background-image:
-      linear-gradient(to right, oklch(0.55 0.02 285 / 0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, oklch(0.55 0.02 285 / 0.05) 1px, transparent 1px);
-    background-size: 44px 44px;
+      linear-gradient(to right, oklch(0.45 0.02 250 / 0.055) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.45 0.02 250 / 0.055) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 
   .eyebrow {

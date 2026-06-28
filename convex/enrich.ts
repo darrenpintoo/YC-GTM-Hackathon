@@ -1,4 +1,4 @@
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -7,16 +7,21 @@ import { fuzzyNameScore } from "./lib/normalize";
 import { callOpenAiJson, callOpenAiWebSearch } from "./lib/openai";
 import { hasFiber, revealContact } from "./lib/fiber";
 import {
+  accountMeetingReasonsSchema,
   attendeeSearchSchema,
   attendeeReasonsSchema,
   decisionMakerSearchSchema,
   speakerExtractionSchema,
+  type AccountMeetingReasonsOutput,
   type AttendeeSearchOutput,
   type AttendeeReasonsOutput,
   type DecisionMakerSearchOutput,
   type SpeakerExtractionOutput,
 } from "../lib/aiSchemas";
 import { resolveMatchReason } from "./lib/attendeeConnection";
+import {
+  resolveAccountMeetingReason,
+} from "../lib/accountMeetingReason";
 
 const MAX_FIBER_REVEALS = 12;
 const MAX_FIBER_DECISION_MAKERS = 12;
@@ -800,5 +805,383 @@ export const save = internalMutation({
       attendeeCount: args.attendees.length,
       contactCount: args.contacts.length,
     };
+  },
+});
+
+/** Best-effort AI "why meet" lines for all matched accounts (after match step). */
+export const generateMeetingReasons = internalAction({
+  args: { eventId: v.id("event") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const inputs = await ctx.runQuery(internal.enrich.getInputs, {
+      eventId: args.eventId,
+    });
+    if (!inputs || inputs.matches.length === 0) return null;
+
+    const fullMatches = await ctx.runQuery(internal.enrich.listMatchesForReasons, {
+      eventId: args.eventId,
+    });
+
+    const accounts = fullMatches.map((m, index) => ({
+      index,
+      companyName: m.companyName,
+      tier: m.tier,
+      role: m.role,
+      openPipelineUsd: m.matchedOppValue ?? 0,
+      boothOrSession: m.boothOrSession ?? "",
+      publicSignal: (m.evidenceQuote ?? "").slice(0, 200),
+      namedContact: m.contactName ?? "",
+    }));
+
+    const patches: Array<{ matchId: Id<"accountMatch">; reason: string }> = [];
+
+    try {
+      const ai = await callOpenAiJson<AccountMeetingReasonsOutput>({
+        system: [
+          `You help ${inputs.sellerName ?? "a B2B sales team"} decide which companies to meet at ${inputs.event.name}.`,
+          "For each account, write ONE actionable sentence (max ~22 words) on WHY meet them AT THIS EVENT — not their industry overview.",
+          "Ground every line in publicSignal and/or openPipelineUsd / tier.",
+          "GOOD: 'CRM account with $180K open opp; exhibiting Booth N1234 — walk the floor before renewal.'",
+          "BAD: 'Leading construction firm.' / 'Good fit for collaboration.'",
+          "For sponsorship listings (not company names), say to deprioritize unless ICP-aligned.",
+          "Never invent facts not in the input.",
+        ].join(" "),
+        user: [
+          `Seller ICP industries: ${inputs.industries.slice(0, 8).join(", ") || "unknown"}`,
+          `Seller target buyer titles: ${inputs.buyerTitles.slice(0, 8).join(", ") || "unknown"}`,
+          `Event: ${inputs.event.name}`,
+          "",
+          "Accounts (JSON):",
+          JSON.stringify(accounts.slice(0, 80)),
+        ].join("\n"),
+        responseSchema: accountMeetingReasonsSchema,
+      });
+
+      for (const r of ai?.reasons ?? []) {
+        if (
+          typeof r.index !== "number" ||
+          r.index < 0 ||
+          r.index >= fullMatches.length ||
+          !r.reason?.trim()
+        ) {
+          continue;
+        }
+        const m = fullMatches[r.index]!;
+        const ctxReason = {
+          eventName: inputs.event.name,
+          sellerName: inputs.sellerName,
+          buyerTitles: inputs.buyerTitles,
+          companyName: m.companyName,
+          domain: m.domain,
+          tier: m.tier,
+          role: m.role,
+          boothOrSession: m.boothOrSession,
+          matchedOppValue: m.matchedOppValue,
+          contactName: m.contactName,
+          contactTitle: m.contactTitle,
+          evidenceQuote: m.evidenceQuote,
+          presence: m.presence,
+          editionLabel: m.editionLabel,
+        };
+        patches.push({
+          matchId: m._id,
+          reason: resolveAccountMeetingReason(r.reason.trim(), ctxReason),
+        });
+      }
+    } catch (err) {
+      console.warn("Account meeting reason generation failed", err);
+    }
+
+    if (patches.length > 0) {
+      await ctx.runMutation(internal.enrich.patchMeetingReasons, { patches });
+    }
+    return null;
+  },
+});
+
+export const listMatchesForReasons = internalQuery({
+  args: { eventId: v.id("event") },
+  handler: async (ctx, args) => {
+    const matches = await ctx.db
+      .query("accountMatch")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    return matches.map((m) => ({
+      _id: m._id,
+      companyName: m.companyName,
+      domain: m.domain,
+      tier: m.tier,
+      role: m.role,
+      boothOrSession: m.boothOrSession,
+      matchedOppValue: m.matchedOppValue,
+      contactName: m.contactName,
+      contactTitle: m.contactTitle,
+      evidenceQuote: m.evidence[0]?.quote,
+      presence: m.presence,
+      editionLabel: m.editionLabel,
+    }));
+  },
+});
+
+export const patchMeetingReasons = internalMutation({
+  args: {
+    patches: v.array(
+      v.object({
+        matchId: v.id("accountMatch"),
+        reason: v.string(),
+      }),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    for (const p of args.patches) {
+      await ctx.db.patch("accountMatch", p.matchId, {
+        meetingReason: p.reason,
+      });
+    }
+    return null;
+  },
+});
+
+export const getMatchForEnrich = internalQuery({
+  args: { accountMatchId: v.id("accountMatch") },
+  handler: async (ctx, args) => {
+    const match = await ctx.db.get("accountMatch", args.accountMatchId);
+    if (!match) return null;
+
+    const event = await ctx.db.get("event", match.eventId);
+    if (!event) return null;
+
+    let buyerTitles: string[] = [];
+    let sellerName: string | undefined;
+    if (event.revenueProfileId) {
+      const profile = await ctx.db.get("revenueProfile", event.revenueProfileId);
+      buyerTitles = profile?.buyerTitles ?? [];
+      sellerName = profile?.name;
+    }
+
+    const existingContact = await ctx.db
+      .query("contact")
+      .withIndex("by_account_match", (q) =>
+        q.eq("accountMatchId", args.accountMatchId),
+      )
+      .first();
+
+    return {
+      match,
+      eventName: event.name,
+      sellerName,
+      buyerTitles,
+      existingContactId: existingContact?._id ?? null,
+    };
+  },
+});
+
+export const upsertContactForMatch = internalMutation({
+  args: {
+    accountMatchId: v.id("accountMatch"),
+    eventId: v.id("event"),
+    fullName: v.string(),
+    title: v.string(),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
+    verification: v.union(
+      v.literal("verified"),
+      v.literal("likely"),
+      v.literal("unknown"),
+    ),
+    fiberRawJson: v.optional(v.string()),
+  },
+  returns: v.id("contact"),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("contact")
+      .withIndex("by_account_match", (q) =>
+        q.eq("accountMatchId", args.accountMatchId),
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch("contact", existing._id, {
+        fullName: args.fullName,
+        title: args.title,
+        email: args.email,
+        phone: args.phone,
+        linkedinUrl: args.linkedinUrl,
+        verification: args.verification,
+        fiberRawJson: args.fiberRawJson,
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("contact", {
+      accountMatchId: args.accountMatchId,
+      eventId: args.eventId,
+      fullName: args.fullName,
+      title: args.title,
+      email: args.email,
+      phone: args.phone,
+      linkedinUrl: args.linkedinUrl,
+      verification: args.verification,
+      fiberRawJson: args.fiberRawJson,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const upsertDraftForMatch = internalMutation({
+  args: {
+    accountMatchId: v.id("accountMatch"),
+    eventId: v.id("event"),
+    contactId: v.id("contact"),
+    eventName: v.string(),
+    companyName: v.string(),
+    boothOrSession: v.optional(v.string()),
+    contactFirstName: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("outreachDraft")
+      .withIndex("by_account_match", (q) =>
+        q.eq("accountMatchId", args.accountMatchId),
+      )
+      .first();
+
+    const booth = args.boothOrSession ? ` (${args.boothOrSession})` : "";
+    const subject = `Meet at ${args.eventName}?`;
+    const body = `Hi ${args.contactFirstName} — saw ${args.companyName} is on the floor at ${args.eventName}${booth}. I'd value 15 minutes while we're both there. Open to a quick coffee?`;
+
+    if (existing) {
+      await ctx.db.patch("outreachDraft", existing._id, {
+        contactId: args.contactId,
+        subject,
+        body,
+      });
+      return null;
+    }
+
+    await ctx.db.insert("outreachDraft", {
+      accountMatchId: args.accountMatchId,
+      contactId: args.contactId,
+      eventId: args.eventId,
+      subject,
+      body,
+      tone: "direct",
+      createdAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+/** On-demand decision-maker lookup when the user opens an account drawer. */
+export const enrichAccountMatch = action({
+  args: { accountMatchId: v.id("accountMatch") },
+  returns: v.object({ found: v.boolean() }),
+  handler: async (ctx, args): Promise<{ found: boolean }> => {
+    const row = await ctx.runQuery(internal.enrich.getMatchForEnrich, {
+      accountMatchId: args.accountMatchId,
+    });
+    if (!row) return { found: false };
+    if (row.existingContactId) return { found: true };
+
+    const { match, eventName, buyerTitles } = row;
+
+    if (match.contactName?.trim()) {
+      const contactId = await ctx.runMutation(internal.enrich.upsertContactForMatch, {
+        accountMatchId: match._id,
+        eventId: match.eventId,
+        fullName: match.contactName.trim(),
+        title: match.contactTitle?.trim() || "Decision maker",
+        verification: "likely",
+        fiberRawJson: match.contactQuote
+          ? JSON.stringify({ sourceQuote: match.contactQuote })
+          : undefined,
+      });
+      const first = match.contactName.trim().split(/\s+/)[0] ?? "there";
+      await ctx.runMutation(internal.enrich.upsertDraftForMatch, {
+        accountMatchId: match._id,
+        eventId: match.eventId,
+        contactId,
+        eventName,
+        companyName: match.companyName,
+        boothOrSession: match.boothOrSession,
+        contactFirstName: first,
+      });
+      return { found: true };
+    }
+
+    try {
+      const ai = await callOpenAiWebSearch<DecisionMakerSearchOutput>({
+        instructions: [
+          "You are a B2B sales researcher.",
+          "Use web search to find ONE public LinkedIn profile of a likely decision maker matching the seller's buyer titles.",
+          "Return real linkedin.com/in/ URLs only — never invent a person or URL.",
+          "If no credible profile is found, return empty strings.",
+        ].join(" "),
+        input: [
+          `Event context: ${eventName}`,
+          `Target buyer titles: ${buyerTitles.slice(0, 8).join(", ") || "VP, Director"}`,
+          `Companies (JSON): ${JSON.stringify([
+            {
+              index: 0,
+              companyName: match.companyName,
+              domain: match.domain ?? "",
+              hasSourceContact: false,
+            },
+          ])}`,
+        ].join("\n"),
+        responseSchema: decisionMakerSearchSchema,
+      });
+
+      const person = (ai?.people ?? []).find(
+        (p) =>
+          p.index === 0 &&
+          p.linkedinUrl?.includes("linkedin.com/in/"),
+      );
+
+      if (!person?.linkedinUrl) return { found: false };
+
+      const fiber =
+        hasFiber() && person.linkedinUrl
+          ? await revealContact(person.linkedinUrl)
+          : null;
+
+      const name = person.fullName?.trim();
+      if (!name && !fiber?.email) return { found: false };
+
+      const contactId = await ctx.runMutation(internal.enrich.upsertContactForMatch, {
+        accountMatchId: match._id,
+        eventId: match.eventId,
+        fullName: name || "Decision maker",
+        title:
+          person.title?.trim() ||
+          fiber?.title ||
+          buyerTitles[0] ||
+          "Decision maker",
+        email: fiber?.email,
+        phone: fiber?.phone,
+        linkedinUrl: person.linkedinUrl || undefined,
+        verification: fiber?.emailStatus === "valid" ? "verified" : "likely",
+        fiberRawJson: fiber?.raw,
+      });
+
+      const first = (name || "there").split(/\s+/)[0] ?? "there";
+      await ctx.runMutation(internal.enrich.upsertDraftForMatch, {
+        accountMatchId: match._id,
+        eventId: match.eventId,
+        contactId,
+        eventName,
+        companyName: match.companyName,
+        boothOrSession: match.boothOrSession,
+        contactFirstName: first,
+      });
+
+      return { found: true };
+    } catch (err) {
+      console.warn("On-demand enrich failed", err);
+      return { found: false };
+    }
   },
 });
