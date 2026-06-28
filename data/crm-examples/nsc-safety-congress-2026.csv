@@ -1,0 +1,16 @@
+company_name,domain,account_type,stage,deal_size,industry,region,buyer_title,open_opp_value
+Honeywell Safety,honeywell.com,open_opp,Negotiation,210000,Industrial Safety,US Northeast,Director of EHS,210000
+3M Personal Safety,3m.com,open_opp,Proposal,165000,PPE & Safety,US Midwest,VP Safety,165000
+DuPont Sustainable Solutions,dupont.com,open_opp,Discovery,148000,EHS Consulting,US Northeast,Director of Safety,148000
+MSA Safety,msasafety.com,closed_won,Closed Won,82000,Safety Equipment,US Northeast,Safety Manager,
+Grainger Industrial Supply,grainger.com,target,Target,95000,Industrial Supply,US Midwest,Director of EHS,
+Turner Construction,turnerconstruction.com,open_opp,Discovery,132000,General Contracting,US Northeast,VP Safety,132000
+Fluor Corporation,fluor.com,open_opp,Proposal,118000,Industrial EPC,US South,Director of EHS,118000
+Jacobs Engineering,jacobs.com,target,Target,125000,Engineering Services,US West,VP Operations,
+AECOM,aecom.com,closed_won,Closed Won,88000,Infrastructure,US Northeast,Director of Safety,
+BASF,basf.com,target,Target,140000,Chemical Manufacturing,US South,VP Safety,
+ExxonMobil,exxonmobil.com,open_opp,Discovery,185000,Energy,US South,Director of EHS,185000
+Chevron,chevron.com,target,Target,172000,Energy,US West,VP Operations,
+Freeport-McMoRan,fcx.com,closed_won,Closed Won,74000,Mining,US West,Safety Manager,
+LyondellBasell,lyondellbasell.com,target,Target,108000,Chemical Manufacturing,US South,Director of Safety,
+Intel Corporation,intel.com,open_opp,Proposal,155000,Semiconductor Manufacturing,US West,Director of EHS,155000

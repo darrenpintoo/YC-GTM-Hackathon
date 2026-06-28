@@ -14,7 +14,13 @@ const DOMAIN_HINTS: Record<string, string> = {
   "brasfield gorrie": "brasfieldgorrie.com",
   gilbane: "gilbaneco.com",
   "suffolk construction": "suffolk.com",
-  mccarthy: "mccarthy.com",
+  "mccarthy building": "mccarthy.com",
+  "mccarthy building companies": "mccarthy.com",
+  "dpr construction": "dpr.com",
+  webcor: "webcor.com",
+  "hensel phelps": "henselphelps.com",
+  "je dunn construction": "jedunn.com",
+  "gilbane building company": "gilbaneco.com",
   kiewit: "kiewit.com",
   "buildright materials": "buildrightmaterials.com",
 };
@@ -70,6 +76,11 @@ export type EventCompanyLite = {
   confidence: number;
   sourceDocumentId: string;
   sourceUrl: string;
+  presence?: "confirmed" | "recurring";
+  editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
 };
 
 export type RevenueProfileLite = {
@@ -88,6 +99,11 @@ export type MatchCandidate = {
   boothOrSession?: string;
   fitScore: number;
   confidence: number;
+  presence?: "confirmed" | "recurring";
+  editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
   matchedOppValue?: number;
   eventCompanyId: string;
   evidence: {
@@ -249,6 +265,11 @@ function buildMatch(
     boothOrSession: company.boothOrSession,
     fitScore,
     confidence,
+    presence: company.presence ?? "confirmed",
+    editionLabel: company.editionLabel,
+    contactName: company.contactName,
+    contactTitle: company.contactTitle,
+    contactQuote: company.contactQuote,
     matchedOppValue: crm.openOppValue,
     eventCompanyId: company._id,
     evidence: {
@@ -273,6 +294,11 @@ function buildNetNewMatch(
     boothOrSession: company.boothOrSession,
     fitScore,
     confidence: company.confidence,
+    presence: company.presence ?? "confirmed",
+    editionLabel: company.editionLabel,
+    contactName: company.contactName,
+    contactTitle: company.contactTitle,
+    contactQuote: company.contactQuote,
     eventCompanyId: company._id,
     evidence: {
       sourceDocumentId: company.sourceDocumentId,
@@ -294,6 +320,8 @@ function roleToFactType(
 }
 
 function rankMatches(matches: MatchCandidate[]): MatchCandidate[] {
+  const presenceRank = (match: MatchCandidate) =>
+    match.presence === "recurring" ? 1 : 0;
   const tierRank = (tier: MatchCandidate["tier"]) =>
     tier === "tier1_crm" ? 0 : 1;
   const typeRank = (match: MatchCandidate) => {
@@ -303,6 +331,9 @@ function rankMatches(matches: MatchCandidate[]): MatchCandidate[] {
   };
 
   return [...matches].sort((a, b) => {
+    // Confirmed-this-year always outranks "likely to return".
+    const presDiff = presenceRank(a) - presenceRank(b);
+    if (presDiff !== 0) return presDiff;
     const tierDiff = tierRank(a.tier) - tierRank(b.tier);
     if (tierDiff !== 0) return tierDiff;
     const typeDiff = typeRank(a) - typeRank(b);

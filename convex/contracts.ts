@@ -65,6 +65,13 @@ export const listAccountMatchesByEvent = query({
       boothOrSession: v.optional(v.string()),
       fitScore: v.number(),
       confidence: v.number(),
+      presence: v.optional(
+        v.union(v.literal("confirmed"), v.literal("recurring")),
+      ),
+      editionLabel: v.optional(v.string()),
+      contactName: v.optional(v.string()),
+      contactTitle: v.optional(v.string()),
+      contactQuote: v.optional(v.string()),
       evidence: v.array(
         v.object({
           sourceDocumentId: v.id("sourceDocument"),
@@ -144,6 +151,83 @@ export const getEventScore = query({
       .query("eventScore")
       .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
       .first();
+  },
+});
+
+export const listAttendeesByEvent = query({
+  args: { eventId: v.id("event") },
+  returns: v.array(
+    v.object({
+      _id: v.id("eventAttendee"),
+      _creationTime: v.number(),
+      eventId: v.id("event"),
+      accountMatchId: v.optional(v.id("accountMatch")),
+      fullName: v.string(),
+      title: v.string(),
+      companyName: v.string(),
+      matchTier: v.optional(
+        v.union(v.literal("tier1_crm"), v.literal("tier2_icp")),
+      ),
+      network: v.union(v.literal("linkedin"), v.literal("x"), v.literal("web")),
+      postQuote: v.string(),
+      postedAt: v.optional(v.string()),
+      confidence: v.number(),
+      profileUrl: v.optional(v.string()),
+      sourceUrl: v.optional(v.string()),
+      email: v.optional(v.string()),
+      emailStatus: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      location: v.optional(v.string()),
+      enrichedTitle: v.optional(v.string()),
+      matchReason: v.optional(v.string()),
+      createdAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("eventAttendee")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    // Matched accounts first, then enriched, then by name (no confidence shown).
+    return rows.sort((a, b) => {
+      const am = a.matchTier ? 0 : 1;
+      const bm = b.matchTier ? 0 : 1;
+      if (am !== bm) return am - bm;
+      const ae = a.email ? 0 : 1;
+      const be = b.email ? 0 : 1;
+      if (ae !== be) return ae - be;
+      return a.fullName.localeCompare(b.fullName);
+    });
+  },
+});
+
+export const listContactsByEvent = query({
+  args: { eventId: v.id("event") },
+  returns: v.array(
+    v.object({
+      _id: v.id("contact"),
+      _creationTime: v.number(),
+      accountMatchId: v.id("accountMatch"),
+      eventId: v.id("event"),
+      fullName: v.string(),
+      title: v.string(),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      linkedinUrl: v.optional(v.string()),
+      verification: v.union(
+        v.literal("verified"),
+        v.literal("likely"),
+        v.literal("unknown"),
+      ),
+      fiberRawJson: v.optional(v.string()),
+      createdAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("contact")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
   },
 });
 

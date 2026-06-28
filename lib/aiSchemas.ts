@@ -80,7 +80,16 @@ export const eventExtractionSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["companyName", "role", "boothOrSession", "quote", "confidence"],
+          required: [
+            "companyName",
+            "role",
+            "boothOrSession",
+            "quote",
+            "confidence",
+            "contactName",
+            "contactTitle",
+            "contactQuote",
+          ],
           properties: {
             companyName: { type: "string" },
             role: {
@@ -99,6 +108,20 @@ export const eventExtractionSchema = {
               type: "number",
               minimum: 0,
               maximum: 1,
+            },
+            contactName: {
+              type: "string",
+              description:
+                "Named person at this company in the source (speaker, rep). Use empty string if none named.",
+            },
+            contactTitle: {
+              type: "string",
+              description: "Person's title/role if named; empty string otherwise.",
+            },
+            contactQuote: {
+              type: "string",
+              description:
+                "Verbatim line naming this person; empty string if no person named.",
             },
           },
         },
@@ -209,6 +232,294 @@ export const outreachDraftSchema = {
   },
 } as const;
 
+/** Source URLs discovered for deep research (web_search tool). */
+export const sourceDiscoverySchema = {
+  name: "source_discovery",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["urls"],
+    properties: {
+      urls: {
+        type: "array",
+        description:
+          "Public pages that name companies present at the event (sponsor/exhibitor lists, partner announcements, press, program/speaker pages). Real URLs only.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["url", "category"],
+          properties: {
+            url: { type: "string" },
+            title: { type: "string" },
+            category: {
+              type: "string",
+              enum: [
+                "sponsors",
+                "exhibitors",
+                "speakers",
+                "program",
+                "news",
+                "event",
+                "other",
+              ],
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type SourceDiscoveryOutput = {
+  urls: Array<{ url: string; title?: string; category?: string }>;
+};
+
+/** Real event metadata pulled from the research corpus. */
+export const eventMetaSchema = {
+  name: "event_meta",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["location", "startDate", "endDate"],
+    properties: {
+      location: {
+        type: "string",
+        description: "City, venue, or country. Empty string if unknown.",
+      },
+      startDate: {
+        type: "string",
+        description: "ISO date YYYY-MM-DD of the first day, or empty string.",
+      },
+      endDate: {
+        type: "string",
+        description: "ISO date YYYY-MM-DD of the last day, or empty string.",
+      },
+    },
+  },
+} as const;
+
+export type EventMetaOutput = {
+  location: string;
+  startDate: string;
+  endDate: string;
+};
+
+/** Named speakers/keynotes extracted from gathered program/speaker pages. */
+export const speakerExtractionSchema = {
+  name: "speaker_extraction",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["speakers"],
+    properties: {
+      speakers: {
+        type: "array",
+        description:
+          "People named in the source as speakers, keynotes, panelists, or committee members. Real names from the text only.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["fullName", "quote"],
+          properties: {
+            fullName: { type: "string" },
+            title: { type: "string", description: "Role/title, or empty." },
+            companyName: {
+              type: "string",
+              description: "Affiliation/organization, or empty.",
+            },
+            quote: {
+              type: "string",
+              description: "Verbatim line from the source naming this person.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type SpeakerExtractionOutput = {
+  speakers: Array<{
+    fullName: string;
+    title?: string;
+    companyName?: string;
+    quote: string;
+  }>;
+};
+
+/**
+ * One short, grounded "why this person is a good match" line per attendee,
+ * keyed by index so we can map results back to the input list.
+ */
+export const attendeeReasonsSchema = {
+  name: "attendee_reasons",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["reasons"],
+    properties: {
+      reasons: {
+        type: "array",
+        description: "One entry per input person, referencing their index.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "reason"],
+          properties: {
+            index: {
+              type: "number",
+              description: "The 0-based index of the person in the input list.",
+            },
+            reason: {
+              type: "string",
+              description:
+                "One concise sentence on why this person is a good match for the seller, grounded in their role/company and the ICP. No invented facts.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type AttendeeReasonsOutput = {
+  reasons: Array<{ index: number; reason: string }>;
+};
+
+/** Find a public decision-maker profile for a matched company (web_search tool). */
+export const decisionMakerSearchSchema = {
+  name: "decision_maker_search",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["people"],
+    properties: {
+      people: {
+        type: "array",
+        description: "One entry per input company index.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "fullName", "title", "linkedinUrl"],
+          properties: {
+            index: {
+              type: "number",
+              description: "0-based index of the company in the input list.",
+            },
+            fullName: {
+              type: "string",
+              description: "Person's name from a public source; empty if not found.",
+            },
+            title: {
+              type: "string",
+              description: "Current title/role; empty if unknown.",
+            },
+            linkedinUrl: {
+              type: "string",
+              description:
+                "Public LinkedIn /in/ URL; empty if not found. Never invent a URL.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type DecisionMakerSearchOutput = {
+  people: Array<{
+    index: number;
+    fullName: string;
+    title: string;
+    linkedinUrl: string;
+  }>;
+};
+
+/** Prospective attendees surfaced from public web posts (web_search tool). */
+export const attendeeSearchSchema = {
+  name: "attendee_signals",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["people"],
+    properties: {
+      people: {
+        type: "array",
+        description:
+          "People who PUBLICLY posted/announced they are attending the event. Only include real, sourced signals — never guess.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "fullName",
+            "title",
+            "companyName",
+            "network",
+            "postQuote",
+            "confidence",
+          ],
+          properties: {
+            fullName: { type: "string" },
+            title: {
+              type: "string",
+              description: "Job title; 'unknown' if not stated.",
+            },
+            companyName: {
+              type: "string",
+              description: "Employer; prefer a company from the provided list.",
+            },
+            network: { type: "string", enum: ["linkedin", "x"] },
+            postQuote: {
+              type: "string",
+              description: "Verbatim snippet of their public post about attending.",
+            },
+            postedAt: {
+              type: "string",
+              description: "ISO date of the post if known, else empty string.",
+            },
+            profileUrl: {
+              type: "string",
+              description: "Public profile or post URL.",
+            },
+            sourceUrl: {
+              type: "string",
+              description: "URL of the page where the signal was found.",
+            },
+            confidence: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              description: "How explicit the attendance signal is.",
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type AttendeeSearchPerson = {
+  fullName: string;
+  title: string;
+  companyName: string;
+  network: "linkedin" | "x";
+  postQuote: string;
+  postedAt?: string;
+  profileUrl?: string;
+  sourceUrl?: string;
+  confidence: number;
+};
+
+export type AttendeeSearchOutput = {
+  people: AttendeeSearchPerson[];
+};
+
 export type RevenueProfileOutput = {
   industries: string[];
   buyerTitles: string[];
@@ -230,6 +541,9 @@ export type EventExtractionCompany = {
   boothOrSession: string;
   quote: string;
   confidence: number;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
 };
 
 export type EventExtractionFact = {
@@ -274,6 +588,103 @@ export type OutreachDraftOutput = {
   subject: string;
   body: string;
   tone: string;
+};
+
+/** Bronze URL triage — classify discovery candidates before scrape. */
+export const sourceTriageSchema = {
+  name: "source_triage",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["urls"],
+    properties: {
+      urls: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "signal", "expectedContent", "reason"],
+          properties: {
+            index: { type: "number" },
+            signal: {
+              type: "string",
+              enum: ["high", "medium", "low", "skip"],
+            },
+            expectedContent: {
+              type: "string",
+              enum: [
+                "sponsor_list",
+                "exhibitor_list",
+                "speaker_list",
+                "agenda",
+                "noise",
+              ],
+            },
+            reason: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type SourceTriageOutput = {
+  urls: Array<{
+    index: number;
+    signal: "high" | "medium" | "low" | "skip";
+    expectedContent: string;
+    reason: string;
+  }>;
+};
+
+/** Silver consolidation filter — drop low-GTM orgs from extracted list. */
+export const companyFilterSchema = {
+  name: "company_filter",
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["companies"],
+    properties: {
+      companies: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["index", "keep", "orgType", "gtmRelevance"],
+          properties: {
+            index: { type: "number" },
+            keep: { type: "boolean" },
+            orgType: {
+              type: "string",
+              enum: [
+                "commercial",
+                "academic",
+                "government",
+                "media",
+                "unknown",
+              ],
+            },
+            gtmRelevance: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export type CompanyFilterOutput = {
+  companies: Array<{
+    index: number;
+    keep: boolean;
+    orgType: string;
+    gtmRelevance: number;
+  }>;
 };
 
 /** Prompt guardrails shared across AI calls. */

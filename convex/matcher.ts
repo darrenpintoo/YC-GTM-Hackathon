@@ -55,6 +55,11 @@ export const run = internalMutation({
         confidence: company.confidence,
         sourceDocumentId: company.sourceDocumentId,
         sourceUrl: source.url,
+        presence: company.presence ?? "confirmed",
+        editionLabel: company.editionLabel,
+        contactName: company.contactName,
+        contactTitle: company.contactTitle,
+        contactQuote: company.contactQuote,
       });
     }
 
@@ -97,6 +102,11 @@ export const run = internalMutation({
         boothOrSession: candidate.boothOrSession,
         fitScore: candidate.fitScore,
         confidence: candidate.confidence,
+        presence: candidate.presence ?? "confirmed",
+        editionLabel: candidate.editionLabel,
+        contactName: candidate.contactName,
+        contactTitle: candidate.contactTitle,
+        contactQuote: candidate.contactQuote,
         evidence: [
           {
             sourceDocumentId: candidate.evidence

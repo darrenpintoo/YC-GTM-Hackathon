@@ -68,13 +68,46 @@ export default defineSchema({
     kind: sourceDocumentKindValidator,
     url: v.optional(v.string()),
     title: v.optional(v.string()),
+    // Research bucket: sponsors | exhibitors | speakers | program | news | event | other | past_edition
+    category: v.optional(v.string()),
+    // True when this page is a past edition / indirect source (not this year's event).
+    recurring: v.optional(v.boolean()),
+    // Human label for the edition, e.g. "ICRA 2024".
+    editionLabel: v.optional(v.string()),
     textContent: v.string(),
     contentHash: v.string(),
     snapshotStorageId: v.optional(v.id("_storage")),
     fetchedAt: v.number(),
+    // Bronze metadata
+    discoveryScore: v.optional(v.number()),
+    signalTier: v.optional(
+      v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+    ),
+    scrapeStatus: v.optional(
+      v.union(v.literal("ok"), v.literal("empty"), v.literal("failed")),
+    ),
+    charCount: v.optional(v.number()),
+    scrapedPageId: v.optional(v.id("scrapedPage")),
   })
     .index("by_event", ["eventId"])
     .index("by_hash", ["contentHash"]),
+
+  scrapedPage: defineTable({
+    normalizedUrl: v.string(),
+    url: v.string(),
+    markdown: v.string(),
+    contentHash: v.string(),
+    charCount: v.number(),
+    scrapeStatus: v.union(
+      v.literal("ok"),
+      v.literal("empty"),
+      v.literal("failed"),
+    ),
+    category: v.optional(v.string()),
+    fetchedAt: v.number(),
+    hitCount: v.number(),
+    failCount: v.number(),
+  }).index("by_normalized_url", ["normalizedUrl"]),
 
   eventFact: defineTable({
     eventId: v.id("event"),
@@ -107,6 +140,21 @@ export default defineSchema({
     boothOrSession: v.optional(v.string()),
     quote: v.string(),
     confidence: v.number(),
+    // "confirmed" = named in a current-edition source; "recurring" = past edition / indirect.
+    presence: v.optional(
+      v.union(v.literal("confirmed"), v.literal("recurring")),
+    ),
+    editionLabel: v.optional(v.string()),
+    // Named person in source tied to this company (speaker, rep, etc.).
+    contactName: v.optional(v.string()),
+    contactTitle: v.optional(v.string()),
+    contactQuote: v.optional(v.string()),
+    // Silver metadata
+    extractionMethod: v.optional(
+      v.union(v.literal("ai"), v.literal("heuristic"), v.literal("hybrid")),
+    ),
+    orgType: v.optional(v.string()),
+    sourceSignalTier: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_event", ["eventId"])
@@ -183,6 +231,35 @@ export default defineSchema({
   })
     .index("by_account_match", ["accountMatchId"])
     .index("by_event", ["eventId"]),
+
+  // Prospective attendees surfaced from public posts/pages (OpenAI web search).
+  // A social signal, never an inferred attendance claim — we quote the source.
+  eventAttendee: defineTable({
+    eventId: v.id("event"),
+    accountMatchId: v.optional(v.id("accountMatch")),
+    fullName: v.string(),
+    title: v.string(),
+    companyName: v.string(),
+    matchTier: v.optional(
+      v.union(v.literal("tier1_crm"), v.literal("tier2_icp")),
+    ),
+    // "web" = sourced from a public event page (e.g. a named speaker), not a social post.
+    network: v.union(v.literal("linkedin"), v.literal("x"), v.literal("web")),
+    postQuote: v.string(),
+    postedAt: v.optional(v.string()),
+    confidence: v.number(),
+    profileUrl: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    // Fiber-sourced enrichment (best-effort; absent when unavailable).
+    email: v.optional(v.string()),
+    emailStatus: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    location: v.optional(v.string()),
+    enrichedTitle: v.optional(v.string()),
+    // One-line AI rationale for why this person is a good match.
+    matchReason: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_event", ["eventId"]),
 
   jobs: defineTable({
     eventId: v.id("event"),

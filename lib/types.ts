@@ -120,9 +120,19 @@ export type SourceDocument = {
   kind: SourceDocumentKind;
   url?: string;
   title?: string;
+  /** Research bucket: sponsors | exhibitors | speakers | program | news | event | other | past_edition */
+  category?: string;
+  /** True when this page is a past edition / indirect source (not this year's event). */
+  recurring?: boolean;
+  editionLabel?: string;
   textContent: string;
   contentHash: string;
   fetchedAt: number;
+  discoveryScore?: number;
+  signalTier?: "high" | "medium" | "low";
+  scrapeStatus?: "ok" | "empty" | "failed";
+  charCount?: number;
+  scrapedPageId?: SchruteId<"scrapedPage">;
 };
 
 export type EventFact = {
@@ -155,6 +165,14 @@ export type EventCompany = {
   boothOrSession?: string;
   quote: string;
   confidence: number;
+  presence?: "confirmed" | "recurring";
+  editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
+  extractionMethod?: "ai" | "heuristic" | "hybrid";
+  orgType?: string;
+  sourceSignalTier?: string;
   createdAt: number;
 };
 
@@ -170,6 +188,11 @@ export type AccountMatch = {
   boothOrSession?: string;
   fitScore: number;
   confidence: number;
+  presence?: "confirmed" | "recurring";
+  editionLabel?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactQuote?: string;
   evidence: Evidence[];
   matchedOppValue?: number;
   eventCompanyId?: SchruteId<"eventCompany">;

@@ -1,0 +1,18 @@
+company_name,domain,account_type,stage,deal_size,industry,region,buyer_title,open_opp_value
+Ramp,ramp.com,open_opp,Negotiation,85000,Fintech,US West,Head of Finance,85000
+Mercury,mercury.com,open_opp,Proposal,72000,Fintech,US West,VP Operations,72000
+Vercel,vercel.com,open_opp,Discovery,95000,Developer Tools,US Northeast,VP Engineering,95000
+Linear,linear.app,open_opp,Discovery,68000,Developer Tools,US West,Head of Product,68000
+Supabase,supabase.com,open_opp,Proposal,78000,Developer Tools,US West,CTO,78000
+PostHog,posthog.com,closed_won,Closed Won,52000,Developer Tools,US Northeast,VP Engineering,
+Rippling,rippling.com,target,Target,120000,HR Tech,US West,Head of People,
+Deel,deel.com,target,Target,98000,HR Tech,US Northeast,VP Operations,
+Retool,retool.com,closed_won,Closed Won,64000,Developer Tools,US West,Director of IT,
+Replicate,replicate.com,target,Target,88000,AI Infrastructure,US West,Head of ML,
+Modal,modal.com,open_opp,Discovery,76000,AI Infrastructure,US West,CTO,76000
+LangChain,langchain.com,open_opp,Proposal,82000,AI Infrastructure,US Northeast,VP Engineering,82000
+Pinecone,pinecone.io,target,Target,91000,AI Infrastructure,US Northeast,Head of Platform,
+Weights & Biases,wandb.ai,closed_won,Closed Won,58000,MLOps,US West,Director of ML,
+Clerk,clerk.com,open_opp,Discovery,54000,Developer Tools,US Northeast,Head of Engineering,54000
+Resend,resend.com,target,Target,48000,Developer Tools,US West,Founder,
+Fly.io,fly.io,closed_won,Closed Won,62000,Cloud Infrastructure,US West,VP Infrastructure,

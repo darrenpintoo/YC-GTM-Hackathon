@@ -1,19 +1,145 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Schrute brand theme — light editorial.
+  Warm paper background, ink type, a refined serif for display, and a calm
+  sage-green accent. The "outcome wheel" uses an indigo -> violet -> magenta
+  ring palette (known accounts -> event footprint -> ICP match).
+*/
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.9rem;
+
+  --background: oklch(0.985 0.004 95);
+  --foreground: oklch(0.23 0.012 285);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.23 0.012 285);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.23 0.012 285);
+
+  /* Ink primary (black buttons in the reference) */
+  --primary: oklch(0.24 0.012 285);
+  --primary-foreground: oklch(0.985 0.002 95);
+
+  --secondary: oklch(0.955 0.006 95);
+  --secondary-foreground: oklch(0.28 0.012 285);
+
+  --muted: oklch(0.965 0.005 95);
+  --muted-foreground: oklch(0.52 0.012 285);
+
+  --accent: oklch(0.95 0.03 150);
+  --accent-foreground: oklch(0.38 0.07 150);
+
+  --destructive: oklch(0.57 0.2 25);
+  --destructive-foreground: oklch(0.99 0.01 25);
+
+  /* Sage green — verdicts / confidence / eyebrows */
+  --success: oklch(0.56 0.11 150);
+  --success-foreground: oklch(0.99 0.01 150);
+
+  --warning: oklch(0.66 0.13 70);
+  --warning-foreground: oklch(0.99 0.01 70);
+
+  --border: oklch(0.92 0.004 285);
+  --input: oklch(0.9 0.004 285);
+  --ring: oklch(0.56 0.11 150);
+
+  /* Outcome-wheel ring palette */
+  --tier1: oklch(0.42 0.11 285); /* known accounts — indigo */
+  --tier2: oklch(0.56 0.16 295); /* event footprint — violet */
+  --icp: oklch(0.62 0.2 350); /* ICP match — magenta */
+  --brand: oklch(0.56 0.11 150); /* sage green */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-tier1: var(--tier1);
+  --color-tier2: var(--tier2);
+  --color-icp: var(--icp);
+  --color-brand: var(--brand);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+* {
+  border-color: var(--border);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer utilities {
+  /* Refined serif for display headlines */
+  .font-display {
+    font-family: var(--font-serif);
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, oklch(0.55 0.02 285 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.55 0.02 285 / 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-in {
+    animation: none !important;
+  }
 }

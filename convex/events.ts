@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { DEFAULT_UNDERWRITING_ASSUMPTIONS } from "./lib/defaults";
 import { initCoreJobs } from "./lib/jobs";
@@ -30,6 +30,9 @@ export const create = mutation({
         revenueProfileId: args.revenueProfileId,
         assumptions: DEFAULT_UNDERWRITING_ASSUMPTIONS,
       });
+      // Reset job rows to pending so a re-run streams fresh progress instead of
+      // showing the previous run's completed steps.
+      await initCoreJobs(ctx, existing._id);
       return existing._id;
     }
 
@@ -47,6 +50,27 @@ export const create = mutation({
 
     await initCoreJobs(ctx, eventId);
     return eventId;
+  },
+});
+
+/** Patch event metadata discovered during research (dates/location). */
+export const patchResearched = internalMutation({
+  args: {
+    eventId: v.id("event"),
+    location: v.optional(v.string()),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const patch: Record<string, string> = {};
+    if (args.location) patch.location = args.location;
+    if (args.startDate) patch.startDate = args.startDate;
+    if (args.endDate) patch.endDate = args.endDate;
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch("event", args.eventId, patch);
+    }
+    return null;
   },
 });
 
@@ -97,6 +121,18 @@ export const getBySlug = query({
       location: v.optional(v.string()),
       sponsorQuote: v.optional(v.number()),
       revenueProfileId: v.optional(v.id("revenueProfile")),
+      assumptions: v.optional(
+        v.object({
+          sponsorCost: v.number(),
+          travelCost: v.number(),
+          repTimeCost: v.number(),
+          avgDealSize: v.number(),
+          meetingToOppRate: v.number(),
+          winRate: v.number(),
+          riskDiscount: v.number(),
+          captureRate: v.number(),
+        }),
+      ),
       createdAt: v.number(),
     }),
     v.null(),
