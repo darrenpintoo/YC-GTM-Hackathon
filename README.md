@@ -8,7 +8,7 @@ It is CRM-grounded, evidence-cited, and honest: it proves a *company* is present
 
 > Built for the **Y Combinator's AI Growth Hackathon** and placed #4 overall.
 
-Pitch Video: https://www.youtube.com/watch?v=ZryCRmtFqCs
+Pitch Video: https://www.youtube.com/watch?v=ZryCRmtFqCs \
 Hosted URL: https://schrute-gtm.vercel.app/
 
 ---
@@ -111,5 +111,5 @@ data/
 ## Team
 
 - **Kathan Gabani**
-- **Darren**
-- **Nehal**
+- **Darren Pinto**
+- **Nehal Agrawal**
